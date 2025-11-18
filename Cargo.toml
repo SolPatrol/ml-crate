@@ -1,0 +1,64 @@
+[package]
+name = "ml-crate-dsrs"
+version = "0.1.0"
+edition = "2021"
+authors = ["Omakase Gaming"]
+description = "DSPy-RS model crate with Candle adapter for GPU-accelerated LLM inference (Qwen2.5-0.5B)"
+license = "MIT"
+
+[dependencies]
+# dspy-rs integration (core responsibility)
+dspy-rs = "0.7.3"
+async-trait = "0.1"
+
+# Tokio async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Candle types for model inference with CUDA GPU support
+# Requires CUDA 12.x toolkit installed (12.0-12.6 supported by cudarc)
+candle-core = { version = "0.9", features = ["cuda"] }
+candle-transformers = { version = "0.9", features = ["cuda"] }
+candle-nn = { version = "0.9", features = ["cuda"] }
+tokenizers = "0.21"           # For using provided tokenizer
+
+# Utilities
+thiserror = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = "0.3"  # For examples and tests
+
+# Sampling (Phase 1: for token sampling in generate())
+rand = "0.8"
+
+# Tool integration (required by dspy-rs Adapter trait)
+# Note: rig-core is renamed to rig_core in imports
+# We specify the package name explicitly to match dspy-rs's dependency
+rig_core = { package = "rig-core", version = "0.22" }
+
+# Optional: HuggingFace Hub for model downloads (Phase 1+)
+hf-hub = { version = "0.3", optional = true }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[lib]
+name = "ml_crate_dsrs"
+path = "src/lib.rs"
+
+# Examples - Phase 1
+[[example]]
+name = "quick_test"
+path = "examples/quick_test.rs"
+
+# Future examples
+# [[example]]
+# name = "simple_qa"
+# path = "examples/simple_qa.rs"
+
+# [[example]]
+# name = "chain_of_thought"
+# path = "examples/chain_of_thought.rs"
