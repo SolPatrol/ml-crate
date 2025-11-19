@@ -63,3 +63,6 @@ pub mod error;
 pub use adapter::{CandleAdapter, LoadedModel};
 pub use config::CandleConfig;
 pub use error::{CandleAdapterError, Result};
+
+// Re-export dspy-rs types for convenience
+pub use dspy_rs::{Chat, Example, LM, LmUsage, Message, MetaSignature, Prediction};

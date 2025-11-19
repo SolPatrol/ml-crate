@@ -41,6 +41,7 @@ rig_core = { package = "rig-core", version = "0.22" }
 
 # Optional: HuggingFace Hub for model downloads (Phase 1+)
 hf-hub = { version = "0.3", optional = true }
+regex = "1.12.2"
 
 [dev-dependencies]
 tokio-test = "0.4"
