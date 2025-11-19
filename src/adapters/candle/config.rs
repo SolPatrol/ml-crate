@@ -66,6 +66,10 @@ pub struct CandleConfig {
 
     /// Cache TTL in seconds
     pub cache_ttl_secs: u64,
+
+    /// Enable token-by-token streaming output (Phase 2B)
+    /// When enabled, tokens can be streamed as they're generated
+    pub enable_streaming: bool,
 }
 
 impl Default for CandleConfig {
@@ -85,6 +89,7 @@ impl Default for CandleConfig {
             max_backoff_ms: 5000,
             enable_cache: false,
             cache_ttl_secs: 300,
+            enable_streaming: false,
         }
     }
 }
@@ -132,6 +137,12 @@ impl CandleConfig {
     pub fn with_cache(mut self, enable: bool, ttl_secs: u64) -> Self {
         self.enable_cache = enable;
         self.cache_ttl_secs = ttl_secs;
+        self
+    }
+
+    /// Enable streaming output (Phase 2B)
+    pub fn with_streaming(mut self, enable: bool) -> Self {
+        self.enable_streaming = enable;
         self
     }
 }

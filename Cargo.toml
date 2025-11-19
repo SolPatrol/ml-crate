@@ -13,6 +13,7 @@ async-trait = "0.1"
 
 # Tokio async runtime
 tokio = { version = "1", features = ["full"] }
+futures = "0.3"  # For streaming support (Phase 2B)
 
 # Candle types for model inference with CUDA GPU support
 # Requires CUDA 12.x toolkit installed (12.0-12.6 supported by cudarc)

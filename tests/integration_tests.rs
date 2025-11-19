@@ -557,3 +557,51 @@ async fn test_14_phase2a_end_to_end_with_real_model() {
     println!("✅ End-to-end workflow complete with real model");
     println!("   Demonstration → Format → Generate → Parse → Extract");
 }
+
+// ============================================================================
+// Phase 2B Integration Tests - Streaming Output
+// ============================================================================
+
+#[tokio::test]
+#[ignore] // Requires model download
+async fn test_15_phase2b_streaming_output() {
+    use futures::StreamExt;
+
+    println!("\n=== Test 15: Phase 2B - Streaming Output ===");
+
+    let adapter = setup_adapter().await;
+
+    // Test streaming generation
+    let prompt = "Count from 1 to 5:";
+    println!("Prompt: {}", prompt);
+
+    let mut stream = adapter.generate_stream(prompt).await.unwrap();
+
+    let mut tokens_received = 0;
+    let mut full_output = String::new();
+
+    println!("Streaming tokens:");
+    while let Some(result) = stream.next().await {
+        match result {
+            Ok(token) => {
+                print!("{}", token); // Print token as it arrives
+                full_output.push_str(&token);
+                tokens_received += 1;
+            }
+            Err(e) => {
+                println!("\nStream error: {}", e);
+                panic!("Streaming failed: {}", e);
+            }
+        }
+    }
+    println!(); // Newline after streaming
+
+    println!("Tokens received: {}", tokens_received);
+    println!("Full output: {}", full_output);
+
+    // Verify we got tokens
+    assert!(tokens_received > 0, "Should receive at least one token");
+    assert!(!full_output.is_empty(), "Output should not be empty");
+
+    println!("✅ Streaming output works correctly");
+}

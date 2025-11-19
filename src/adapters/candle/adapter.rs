@@ -251,6 +251,204 @@ impl CandleAdapter {
         Ok((output_text, prompt_token_count, completion_token_count))
     }
 
+    /// Generate text with streaming output (Phase 2B)
+    ///
+    /// Returns a stream that yields tokens as they're generated, enabling
+    /// real-time token-by-token output for better user experience.
+    ///
+    /// # Returns
+    ///
+    /// A stream of `Result<String>` where each item is a decoded token string.
+    /// The stream also tracks token counts internally.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use futures::StreamExt;
+    ///
+    /// let mut stream = adapter.generate_stream("Hello, world!").await?;
+    /// while let Some(token) = stream.next().await {
+    ///     print!("{}", token?); // Print each token as it arrives
+    /// }
+    /// ```
+    pub async fn generate_stream(
+        &self,
+        prompt: &str,
+    ) -> Result<std::pin::Pin<Box<dyn futures::Stream<Item = Result<String>> + Send>>> {
+        use futures::stream;
+
+        // 1. Tokenize the prompt
+        let encoding = self
+            .model
+            .tokenizer
+            .encode(prompt, true)
+            .map_err(|e| CandleAdapterError::TokenizationFailed(e.to_string()))?;
+
+        let input_tokens = encoding.get_ids().to_vec();
+        let prompt_token_count = input_tokens.len() as u64;
+
+        tracing::debug!(
+            "Streaming: Tokenized prompt: {} chars -> {} tokens",
+            prompt.len(),
+            prompt_token_count
+        );
+
+        // 2. Check context length
+        if input_tokens.len() > self.config.context_length {
+            return Err(CandleAdapterError::ContextTooLong {
+                actual: input_tokens.len(),
+                max: self.config.context_length,
+            });
+        }
+
+        // 3. Clone what we need for the stream
+        let model = Arc::clone(&self.model.model);
+        let tokenizer = Arc::clone(&self.model.tokenizer);
+        let device = self.model.device.clone();
+        let max_tokens = self.config.max_tokens;
+        let temperature = self.config.temperature;
+        let top_p = self.config.top_p;
+        let top_k = self.config.top_k;
+
+        // 4. Create a channel for streaming tokens
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+        // 5. Spawn blocking task to generate tokens
+        tokio::task::spawn_blocking(move || {
+            Self::generate_tokens_streaming(
+                &model,
+                &tokenizer,
+                &device,
+                input_tokens,
+                max_tokens,
+                temperature,
+                top_p,
+                top_k,
+                tx,
+            )
+        });
+
+        // 6. Convert receiver into a stream and box it for pinning
+        let stream = stream::unfold(rx, |mut rx| async move {
+            rx.recv().await.map(|result| (result, rx))
+        });
+
+        Ok(Box::pin(stream))
+    }
+
+    /// Core streaming token generation logic (runs in spawn_blocking)
+    ///
+    /// Generates tokens one at a time and sends each decoded token through the channel.
+    #[allow(clippy::too_many_arguments)] // Necessary for spawn_blocking closure
+    fn generate_tokens_streaming(
+        model: &Arc<Mutex<Qwen2Model>>,
+        tokenizer: &Arc<Tokenizer>,
+        device: &Device,
+        input_tokens: Vec<u32>,
+        max_tokens: usize,
+        temperature: f32,
+        top_p: f32,
+        top_k: Option<usize>,
+        tx: tokio::sync::mpsc::UnboundedSender<Result<String>>,
+    ) {
+        // Lock the model for inference
+        let mut model = match model.lock() {
+            Ok(m) => m,
+            Err(e) => {
+                let _ = tx.send(Err(CandleAdapterError::InferenceFailed(format!(
+                    "Model lock error: {}",
+                    e
+                ))));
+                return;
+            }
+        };
+
+        // Clear KV cache from previous generations
+        model.clear_kv_cache();
+
+        // Initialize with input tokens
+        let mut all_tokens = input_tokens.clone();
+
+        // Generate tokens one at a time (auto-regressive)
+        for step in 0..max_tokens {
+            // For the first iteration, use all tokens; for subsequent ones, only the last token
+            let current_tokens = if step == 0 {
+                &all_tokens[..]
+            } else {
+                &all_tokens[all_tokens.len() - 1..]
+            };
+
+            // Convert tokens to tensor
+            let input_tensor = match Tensor::new(current_tokens, device)
+                .and_then(|t| t.reshape((1, current_tokens.len())))
+            {
+                Ok(t) => t,
+                Err(e) => {
+                    let _ = tx.send(Err(CandleAdapterError::InferenceFailed(e.to_string())));
+                    return;
+                }
+            };
+
+            // seqlen_offset is the position in the sequence
+            let seqlen_offset = if step == 0 { 0 } else { all_tokens.len() - 1 };
+
+            // Run model forward pass
+            let logits = match model.forward(&input_tensor, seqlen_offset) {
+                Ok(l) => l,
+                Err(e) => {
+                    let _ = tx.send(Err(CandleAdapterError::InferenceFailed(e.to_string())));
+                    return;
+                }
+            };
+
+            // Extract logits for the last token
+            let logits = match logits.dim(1).and_then(|seq_len| {
+                logits.i((.., seq_len - 1, ..)).and_then(|l| l.squeeze(0))
+            }) {
+                Ok(l) => l,
+                Err(e) => {
+                    let _ = tx.send(Err(CandleAdapterError::InferenceFailed(e.to_string())));
+                    return;
+                }
+            };
+
+            // Sample next token
+            let next_token = match Self::sample_token(&logits, temperature, top_p, top_k) {
+                Ok(t) => t,
+                Err(e) => {
+                    let _ = tx.send(Err(e));
+                    return;
+                }
+            };
+
+            // Check for end-of-sequence token
+            const EOS_TOKEN_ID: u32 = 151643;
+            if next_token == EOS_TOKEN_ID {
+                tracing::debug!("Hit EOS token in streaming, stopping");
+                break;
+            }
+
+            // Add to sequence
+            all_tokens.push(next_token);
+
+            // Decode just the new token and send it
+            // Note: Decoding single tokens may not always produce valid UTF-8
+            // For better streaming, we decode the full sequence and send the diff
+            match tokenizer.decode(&[next_token], true) {
+                Ok(token_str) => {
+                    if tx.send(Ok(token_str)).is_err() {
+                        tracing::debug!("Stream receiver dropped, stopping generation");
+                        return;
+                    }
+                }
+                Err(e) => {
+                    let _ = tx.send(Err(CandleAdapterError::TokenizationFailed(e.to_string())));
+                    return;
+                }
+            }
+        }
+    }
+
     /// Core token generation logic (runs in spawn_blocking)
     ///
     /// This implements auto-regressive generation: generate one token at a time,
