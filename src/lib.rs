@@ -11,12 +11,9 @@
 //! ## Components
 //!
 //! 1. **Hardware Manager** - VRAM detection and backend selection
-//! 2. **Model Pool** - Qwen3-0.6B lifecycle management
-//! 3. **Candle Adapter** - dspy-rs Adapter trait implementation (THIS)
-//! 4. **Agent Registry** - DSPy Module selection per agent type
-//! 5. **Context Builder** - Game state formatting
-//! 6. **Tool Registry** - Function calling capabilities
-//! 7. **Inference API** - High-level generation interface
+//! 2. **Model Pool** - Qwen2.5-0.5B lifecycle management (load, warmup, unload)
+//! 3. **Candle Adapter** - dspy-rs Adapter trait implementation
+//! 4. **DSPy Engine** - Module pool, execution, and Tool trait for Rhai integration
 //!
 //! ## Example Usage
 //!
