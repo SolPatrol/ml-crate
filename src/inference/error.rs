@@ -62,6 +62,14 @@ pub enum DSPyEngineError {
     /// Invalid module format
     #[error("Invalid module format: {0}")]
     InvalidModuleFormat(String),
+
+    /// File watcher error (hot reload)
+    #[error("File watcher error: {0}")]
+    WatcherError(String),
+
+    /// Hot reload failed
+    #[error("Hot reload failed for {path}: {reason}")]
+    HotReloadFailed { path: String, reason: String },
 }
 
 impl DSPyEngineError {
@@ -94,6 +102,19 @@ impl DSPyEngineError {
     pub fn config(msg: impl Into<String>) -> Self {
         Self::ConfigError(msg.into())
     }
+
+    /// Create a watcher error
+    pub fn watcher(msg: impl Into<String>) -> Self {
+        Self::WatcherError(msg.into())
+    }
+
+    /// Create a hot reload failed error
+    pub fn hot_reload_failed(path: impl Into<String>, reason: impl Into<String>) -> Self {
+        Self::HotReloadFailed {
+            path: path.into(),
+            reason: reason.into(),
+        }
+    }
 }
 
 /// ErrorKind for categorizing errors
@@ -109,6 +130,8 @@ pub enum ErrorKind {
     Io,
     /// Configuration errors
     Config,
+    /// Hot reload errors
+    HotReload,
 }
 
 impl DSPyEngineError {
@@ -125,6 +148,7 @@ impl DSPyEngineError {
             | Self::MaxIterationsReached(_) => ErrorKind::Inference,
             Self::IoError(_) | Self::JsonError(_) | Self::ParseError(_) => ErrorKind::Io,
             Self::ConfigError(_) => ErrorKind::Config,
+            Self::WatcherError(_) | Self::HotReloadFailed { .. } => ErrorKind::HotReload,
         }
     }
 
@@ -145,6 +169,7 @@ impl fmt::Display for ErrorKind {
             ErrorKind::Inference => write!(f, "Inference"),
             ErrorKind::Io => write!(f, "I/O"),
             ErrorKind::Config => write!(f, "Config"),
+            ErrorKind::HotReload => write!(f, "HotReload"),
         }
     }
 }

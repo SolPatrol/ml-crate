@@ -1,13 +1,13 @@
 # DSPy Engine Specification
 
-**Version**: 1.0.0
-**Status**: ✅ Phase 3A Complete
+**Version**: 1.1.0
+**Status**: ✅ Phase 3A + Hot Reload Complete
 **Dependencies**: CandleAdapter (Component #3), Model Pool (Component #2), dspy-rs (v0.7.3+)
-**Last Updated**: 2025-11-24
+**Last Updated**: 2025-11-25
 
 ---
 
-## ✅ Implementation Status (v1.0.0)
+## ✅ Implementation Status (v1.1.0)
 
 **Phase 3A (Core Engine)**: ✅ COMPLETE
 - OptimizedModule, Demo, SignatureDefinition types implemented
@@ -20,19 +20,28 @@
 - 16 integration tests passing (10 run + 6 ignored requiring model)
 - All 6 model-dependent tests verified passing with real Qwen2.5-0.5B
 
+**Phase 3A-Optional (Hot Reload)**: ✅ COMPLETE
+- HotReloadManager with file watcher (notify crate + debouncing)
+- HotReloadConfig, HotReloadEvent, HotReloadHandle, HotReloadStats
+- SHA-256 hash validation to prevent unnecessary reloads
+- DSPyEngine.enable_hot_reload() integration
+- 10 unit tests passing
+- Integration tests deferred (real-time file watcher tests optional for CI)
+- See: [PHASE-3A-HOTSWAP-CHECKLIST.md](./PHASE-3A-HOTSWAP-CHECKLIST.md)
+
 **Files Created**:
 - `src/inference/mod.rs` - Module exports
-- `src/inference/error.rs` - DSPyEngineError enum (12 variants)
+- `src/inference/error.rs` - DSPyEngineError enum (14 variants incl. hot reload)
 - `src/inference/module.rs` - OptimizedModule, Demo, PredictorType, etc.
 - `src/inference/manifest.rs` - ModuleManifest, ModuleEntry, load helpers
 - `src/inference/registry.rs` - SignatureRegistry
 - `src/inference/conversion.rs` - Value/Example conversion helpers
-- `src/inference/engine.rs` - DSPyEngine struct
+- `src/inference/engine.rs` - DSPyEngine struct + enable_hot_reload()
+- `src/inference/hotreload.rs` - HotReloadManager, config, events, stats
 - `tests/fixtures/modules/*.json` - Test module fixtures
 - `tests/dspy_engine_tests.rs` - Integration tests
 
 **Next Phases**:
-- Phase 3A-Optional: Hot Reload (file watcher)
 - Phase 3B: Tool System (ToolRegistry, ToolWrapper)
 - Phase 3C: Rhai Integration
 
@@ -1258,10 +1267,14 @@ assert(result.response.contains("mock_result"), "Should include tool result");
 - [x] Unit tests pass (63 passing + 10 ignored)
 - [x] Integration tests pass (10 passing + 6 model tests verified)
 
-### Phase 3A-Optional: Hot Reload
-- [ ] File watcher detects JSON changes
-- [ ] Module reloads without restart
-- [ ] Hot reload tests pass
+### Phase 3A-Optional: Hot Reload ✅ COMPLETE
+- [x] File watcher detects JSON changes (notify crate with debouncing)
+- [x] Module reloads without restart (HotReloadManager + events channel)
+- [x] Hot reload unit tests pass (10/10 passing)
+- [x] Hash validation prevents unnecessary reloads (SHA-256)
+- [x] HotReloadConfig, HotReloadEvent, HotReloadHandle, HotReloadStats implemented
+- [x] DSPyEngine.enable_hot_reload() method added
+- [ ] Integration tests (file system real-time tests - deferred, optional for CI)
 
 ### Phase 3B: Tool System
 - [ ] Tool trait implemented

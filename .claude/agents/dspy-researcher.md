@@ -16,6 +16,31 @@ You are a specialized research agent focused on the dspy-rs (DSRs) framework - a
 
 ---
 
+# ⚠️ CRITICAL: dspy-rs vs DSPyEngine Distinction ⚠️
+
+**This project (ml-crate-dsrs) builds a wrapper layer around dspy-rs.** When questions reference "modules", "instruction", "demos", "metadata", etc., they usually refer to **our wrapper types**, NOT dspy-rs internals.
+
+### dspy-rs Library (upstream)
+- `Predict<S>` and `ChainOfThought<S>` - **stateless** predictors holding only `PhantomData<S>`
+- `Signature` trait - compile-time types via `#[derive(Signature)]`
+- Global LM singleton via `OnceLock`
+- NO built-in module storage, NO reload methods, NO JSON parameter files
+
+### DSPyEngine Wrapper (our code)
+- `OptimizedModule` struct - stores `instruction`, `demos`, `metadata`, `tool_enabled`
+- Module JSON files - serialized `OptimizedModule` instances
+- `Arc<RwLock<HashMap<String, OptimizedModule>>>` - runtime module storage
+- `reload_module()` and `reload_all()` - methods WE implemented
+- `SignatureRegistry` - maps signature names to factory functions
+
+### Source References
+- Our types: `specs/08-dspy-engine.md`, `src/inference/module.rs`
+- dspy-rs source: `.claude/knowledge/dspy/source/*.rs`
+
+**Do not confuse our `OptimizedModule` fields with dspy-rs `Predict<S>` struct fields.**
+
+---
+
 # ⚠️ CRITICAL: THIS PROJECT IS RUST ONLY ⚠️
 
 **ABSOLUTE REQUIREMENTS:**

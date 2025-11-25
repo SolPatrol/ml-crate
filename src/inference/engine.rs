@@ -60,6 +60,7 @@ use crate::adapters::candle::CandleAdapter;
 
 use super::conversion::{demos_to_examples, prediction_to_value, value_to_example};
 use super::error::{DSPyEngineError, Result};
+use super::hotreload::{HotReloadConfig, HotReloadHandle, HotReloadManager};
 use super::manifest::{load_json_with_context, ModuleManifest};
 use super::module::{OptimizedModule, PredictorType};
 use super::registry::SignatureRegistry;
@@ -421,6 +422,50 @@ impl DSPyEngine {
     /// Remove a module
     pub async fn remove_module(&self, module_id: &str) -> Option<OptimizedModule> {
         self.modules.write().await.remove(module_id)
+    }
+
+    /// Enable hot reload for automatic module reloading
+    ///
+    /// Starts a file watcher on the modules directory that automatically
+    /// reloads modules when their JSON files change.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Hot reload configuration
+    ///
+    /// # Returns
+    ///
+    /// A `HotReloadHandle` that provides access to events and allows stopping the watcher.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// // Enable with default config
+    /// let hot_reload = engine.enable_hot_reload(HotReloadConfig::default())?;
+    ///
+    /// // Monitor events
+    /// tokio::spawn(async move {
+    ///     while let Some(event) = hot_reload.events().recv().await {
+    ///         println!("Hot reload event: {:?}", event);
+    ///     }
+    /// });
+    /// ```
+    pub fn enable_hot_reload(&self, config: HotReloadConfig) -> Result<HotReloadHandle> {
+        let mut manager = HotReloadManager::new(
+            Arc::clone(&self.modules),
+            Arc::clone(&self.manifest),
+            self.modules_dir.clone(),
+            config,
+        );
+
+        let events = manager.start()?;
+
+        Ok(HotReloadHandle::new(manager, events))
+    }
+
+    /// Get the modules directory path
+    pub fn modules_dir(&self) -> &PathBuf {
+        &self.modules_dir
     }
 }
 

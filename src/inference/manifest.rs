@@ -14,7 +14,7 @@ use super::module::OptimizedModule;
 ///
 /// Describes where to find a module and provides metadata for
 /// caching and categorization.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ModuleEntry {
     /// Relative path from modules/ directory to the module JSON file
     pub path: String,

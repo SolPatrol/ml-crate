@@ -32,6 +32,11 @@ anyhow = "1.0"
 tracing = "0.1"
 tracing-subscriber = "0.3"  # For examples and tests
 
+# Hot reload (Phase 3A-Optional)
+notify = "6.1"                  # Cross-platform file watcher
+notify-debouncer-mini = "0.4"   # Debounce rapid changes
+sha2 = "0.10"                   # Hash validation for change detection
+
 # Sampling (Phase 1: for token sampling in generate())
 rand = "0.8"
 
@@ -46,6 +51,7 @@ regex = "1.12.2"
 
 [dev-dependencies]
 tokio-test = "0.4"
+tempfile = "3.19"
 
 [lib]
 name = "ml_crate_dsrs"

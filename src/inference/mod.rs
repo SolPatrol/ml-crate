@@ -34,6 +34,7 @@
 pub mod conversion;
 pub mod engine;
 pub mod error;
+pub mod hotreload;
 pub mod manifest;
 pub mod module;
 pub mod registry;
@@ -42,6 +43,7 @@ pub mod registry;
 pub use conversion::{example_to_value, prediction_to_value, value_to_example};
 pub use engine::DSPyEngine;
 pub use error::DSPyEngineError;
+pub use hotreload::{HotReloadConfig, HotReloadEvent, HotReloadHandle, HotReloadStats};
 pub use manifest::{ModuleEntry, ModuleManifest};
 pub use module::{Demo, FieldDefinition, ModuleMetadata, OptimizedModule, PredictorType, SignatureDefinition};
 pub use registry::SignatureRegistry;
