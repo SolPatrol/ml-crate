@@ -108,6 +108,7 @@ impl LoadedModel {
 /// # Ok(())
 /// # }
 /// ```
+#[derive(Clone)]
 pub struct CandleAdapter {
     /// Loaded model from Model Pool (Qwen3-0.6B or compatible)
     model: Arc<LoadedModel>,

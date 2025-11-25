@@ -1,0 +1,35 @@
+{
+  "module_id": "qa.simple",
+  "predictor_type": "predict",
+  "signature_name": "qa",
+  "signature": {
+    "inputs": [
+      { "name": "question", "description": "A question to answer", "field_type": "string" }
+    ],
+    "outputs": [
+      { "name": "answer", "description": "The answer to the question", "field_type": "string" }
+    ]
+  },
+  "instruction": "You are a helpful assistant. Answer the question accurately and concisely.",
+  "demos": [
+    {
+      "inputs": { "question": "What is the capital of France?" },
+      "outputs": { "answer": "Paris" }
+    },
+    {
+      "inputs": { "question": "What is 10 times 5?" },
+      "outputs": { "answer": "50" }
+    },
+    {
+      "inputs": { "question": "What language is Rust?" },
+      "outputs": { "answer": "Rust is a systems programming language focused on safety, concurrency, and performance." }
+    }
+  ],
+  "tool_enabled": false,
+  "metadata": {
+    "optimizer": "MIPROv2",
+    "optimized_at": "2025-11-24T10:00:00Z",
+    "metric_score": 0.85,
+    "version": "1.0.0"
+  }
+}

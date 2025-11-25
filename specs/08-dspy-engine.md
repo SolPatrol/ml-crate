@@ -1,9 +1,40 @@
 # DSPy Engine Specification
 
-**Version**: 0.1.0
-**Status**: 📋 Planning
+**Version**: 1.0.0
+**Status**: ✅ Phase 3A Complete
 **Dependencies**: CandleAdapter (Component #3), Model Pool (Component #2), dspy-rs (v0.7.3+)
 **Last Updated**: 2025-11-24
+
+---
+
+## ✅ Implementation Status (v1.0.0)
+
+**Phase 3A (Core Engine)**: ✅ COMPLETE
+- OptimizedModule, Demo, SignatureDefinition types implemented
+- ModuleManifest with load/reload functionality
+- SignatureRegistry with generic registration pattern
+- Value ↔ Example/Prediction conversion helpers
+- DSPyEngine orchestrator with invoke() for Predict and ChainOfThought
+- Full local inference via CandleAdapter (no external API calls)
+- 73 unit tests passing (63 run + 10 ignored requiring model)
+- 16 integration tests passing (10 run + 6 ignored requiring model)
+- All 6 model-dependent tests verified passing with real Qwen2.5-0.5B
+
+**Files Created**:
+- `src/inference/mod.rs` - Module exports
+- `src/inference/error.rs` - DSPyEngineError enum (12 variants)
+- `src/inference/module.rs` - OptimizedModule, Demo, PredictorType, etc.
+- `src/inference/manifest.rs` - ModuleManifest, ModuleEntry, load helpers
+- `src/inference/registry.rs` - SignatureRegistry
+- `src/inference/conversion.rs` - Value/Example conversion helpers
+- `src/inference/engine.rs` - DSPyEngine struct
+- `tests/fixtures/modules/*.json` - Test module fixtures
+- `tests/dspy_engine_tests.rs` - Integration tests
+
+**Next Phases**:
+- Phase 3A-Optional: Hot Reload (file watcher)
+- Phase 3B: Tool System (ToolRegistry, ToolWrapper)
+- Phase 3C: Rhai Integration
 
 ---
 
@@ -1216,15 +1247,16 @@ assert(result.response.contains("mock_result"), "Should include tool result");
 
 ## Success Criteria
 
-### Phase 3A: Core Engine
-- [ ] OptimizedModule deserializes from JSON (with signature_name field)
-- [ ] ModuleManifest loads and indexes modules
-- [ ] SignatureRegistry implemented (consumer registration pattern)
-- [ ] dspy_rs::configure(lm, adapter) called on engine initialization
-- [ ] Value ↔ Example conversion helpers implemented
-- [ ] DSPyEngine.invoke() works with Predict modules
-- [ ] DSPyEngine.invoke() works with ChainOfThought modules
-- [ ] Unit tests pass
+### Phase 3A: Core Engine ✅ COMPLETE
+- [x] OptimizedModule deserializes from JSON (with signature_name field)
+- [x] ModuleManifest loads and indexes modules
+- [x] SignatureRegistry implemented (consumer registration pattern)
+- [x] dspy_rs::configure(lm, adapter) called on engine initialization
+- [x] Value ↔ Example conversion helpers implemented
+- [x] DSPyEngine.invoke() works with Predict modules
+- [x] DSPyEngine.invoke() works with ChainOfThought modules
+- [x] Unit tests pass (63 passing + 10 ignored)
+- [x] Integration tests pass (10 passing + 6 model tests verified)
 
 ### Phase 3A-Optional: Hot Reload
 - [ ] File watcher detects JSON changes

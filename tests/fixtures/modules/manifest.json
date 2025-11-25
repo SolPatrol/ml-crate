@@ -1,0 +1,20 @@
+{
+  "version": "1.0",
+  "modules": {
+    "test.predict": {
+      "path": "test_predict.json",
+      "hash": null,
+      "tags": ["test", "predict"]
+    },
+    "test.cot": {
+      "path": "test_cot.json",
+      "hash": null,
+      "tags": ["test", "chain_of_thought"]
+    },
+    "qa.simple": {
+      "path": "qa_simple.json",
+      "hash": null,
+      "tags": ["qa"]
+    }
+  }
+}

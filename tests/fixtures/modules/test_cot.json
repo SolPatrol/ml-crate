@@ -1,0 +1,31 @@
+{
+  "module_id": "test.cot",
+  "predictor_type": "chain_of_thought",
+  "signature_name": "test.qa",
+  "signature": {
+    "inputs": [
+      { "name": "question", "description": "The question requiring reasoning", "field_type": "string" }
+    ],
+    "outputs": [
+      { "name": "reasoning", "description": "Step-by-step reasoning", "field_type": "string" },
+      { "name": "answer", "description": "The final answer", "field_type": "string" }
+    ]
+  },
+  "instruction": "Think through this step-by-step before providing your final answer.",
+  "demos": [
+    {
+      "inputs": { "question": "If I have 5 apples and give away 2, how many do I have?" },
+      "outputs": {
+        "reasoning": "I start with 5 apples. I give away 2 apples. 5 - 2 = 3.",
+        "answer": "3 apples"
+      }
+    }
+  ],
+  "tool_enabled": false,
+  "metadata": {
+    "optimizer": "manual",
+    "optimized_at": null,
+    "metric_score": null,
+    "version": "1.0.0"
+  }
+}

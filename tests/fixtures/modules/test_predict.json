@@ -1,0 +1,31 @@
+{
+  "module_id": "test.predict",
+  "predictor_type": "predict",
+  "signature_name": "test.qa",
+  "signature": {
+    "inputs": [
+      { "name": "question", "description": "The question to answer", "field_type": "string" }
+    ],
+    "outputs": [
+      { "name": "answer", "description": "The answer", "field_type": "string" }
+    ]
+  },
+  "instruction": "Answer the question directly and concisely.",
+  "demos": [
+    {
+      "inputs": { "question": "What is 2+2?" },
+      "outputs": { "answer": "4" }
+    },
+    {
+      "inputs": { "question": "What color is the sky?" },
+      "outputs": { "answer": "Blue" }
+    }
+  ],
+  "tool_enabled": false,
+  "metadata": {
+    "optimizer": "manual",
+    "optimized_at": null,
+    "metric_score": null,
+    "version": "1.0.0"
+  }
+}

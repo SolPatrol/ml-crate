@@ -19,7 +19,11 @@
 //!
 //! ```rust,ignore
 //! use ml_crate_dsrs::adapters::candle::{CandleAdapter, CandleConfig};
+//! use ml_crate_dsrs::inference::{DSPyEngine, SignatureRegistry};
+//! use ml_crate_dsrs::ModelPool;
 //! use dspy_rs::{configure, LM, Predict, Signature, example};
+//! use std::path::PathBuf;
+//! use std::sync::Arc;
 //!
 //! #[derive(Signature)]
 //! struct QA {
@@ -31,22 +35,29 @@
 //!
 //! #[tokio::main]
 //! async fn main() -> anyhow::Result<()> {
-//!     // 1. Load model from Model Pool (Phase 1)
-//!     // let model_pool = ModelPool::new("./models".into());
-//!     // let loaded = model_pool.load_model("Qwen2.5-0.5B").await?;
+//!     // 1. Load model from Model Pool
+//!     let model_pool = ModelPool::new("./models".into());
+//!     let loaded = model_pool.load_model("Qwen2.5-0.5B").await?;
 //!
 //!     // 2. Create adapter
-//!     let config = CandleConfig::default(); // Uses 32K context for Qwen2.5-0.5B
-//!     // let adapter = CandleAdapter::from_loaded_model(loaded, config);
+//!     let config = CandleConfig::default();
+//!     let adapter = CandleAdapter::from_loaded_model(Arc::new(loaded), config);
 //!
-//!     // 3. Configure dspy-rs
-//!     // configure(adapter, None);
+//!     // 3. Create signature registry and register signatures
+//!     let mut registry = SignatureRegistry::new();
+//!     registry.register::<QA>("qa");
 //!
-//!     // 4. Use predictor
-//!     // let qa = Predict::new(QA::new());
-//!     // let result = qa.forward(example! {
-//!     //     "question": "input" => "What is Rust?"
-//!     // }).await?;
+//!     // 4. Create DSPy Engine
+//!     let engine = DSPyEngine::new(
+//!         PathBuf::from("./modules"),
+//!         Arc::new(adapter),
+//!         registry.into_shared(),
+//!     ).await?;
+//!
+//!     // 5. Invoke a module
+//!     let result = engine.invoke("qa.simple", serde_json::json!({
+//!         "question": "What is Rust?"
+//!     })).await?;
 //!
 //!     Ok(())
 //! }
@@ -56,8 +67,17 @@
 extern crate rig_core;
 
 pub mod adapters;
+pub mod inference;
 pub mod model_pool;
 
-// Re-export commonly used types
+// Re-export commonly used types from adapters
 pub use adapters::candle::{CandleAdapter, CandleConfig, CandleAdapterError};
+
+// Re-export commonly used types from model_pool
 pub use model_pool::ModelPool;
+
+// Re-export commonly used types from inference
+pub use inference::{
+    DSPyEngine, DSPyEngineError, ModuleManifest, ModuleEntry,
+    OptimizedModule, SignatureRegistry,
+};
