@@ -737,15 +737,15 @@ impl DSPyEngine {
         signature_registry: Arc<SignatureRegistry>,
     ) -> Result<Self, DSPyEngineError> {
         // REQUIRED: Initialize dspy-rs global state before any predictor calls
-        // The adapter is set on the Lm builder, not passed to configure()
-        let lm = dspy_rs::Lm::builder()
-            .model("local")  // Placeholder - adapter handles real inference
-            .adapter(adapter.clone())  // Adapter is set here on the Lm
+        // configure() takes BOTH lm AND adapter as separate arguments
+        let lm = dspy_rs::LM::builder()
+            .model("local".to_string())  // Placeholder - adapter handles real inference
             .build()
             .await
             .map_err(|e| DSPyEngineError::RuntimeError(format!("Failed to create LM: {}", e)))?;
 
-        dspy_rs::configure(lm);  // configure() only takes Lm
+        // Configure global settings with LM and our CandleAdapter
+        dspy_rs::configure(lm, adapter.as_ref().clone());
 
         let tools = Arc::new(ToolRegistry::new());
         let tool_wrapper = ToolWrapper::new(tools.clone(), ToolWrapperConfig::default());
@@ -1220,7 +1220,7 @@ assert(result.response.contains("mock_result"), "Should include tool result");
 - [ ] OptimizedModule deserializes from JSON (with signature_name field)
 - [ ] ModuleManifest loads and indexes modules
 - [ ] SignatureRegistry implemented (consumer registration pattern)
-- [ ] dspy_rs::configure(lm) called on engine initialization
+- [ ] dspy_rs::configure(lm, adapter) called on engine initialization
 - [ ] Value ↔ Example conversion helpers implemented
 - [ ] DSPyEngine.invoke() works with Predict modules
 - [ ] DSPyEngine.invoke() works with ChainOfThought modules
