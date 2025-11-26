@@ -51,6 +51,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use dspy_rs::{Example, MetaSignature, Predict, Predictor};
 use serde_json::Value;
@@ -500,6 +501,180 @@ impl DSPyEngine {
                 rt.block_on(self.invoke_with_tools(module_id, input_clone))
             });
         rt
+    }
+
+    // ========================================
+    // Timeout variants for Rhai integration
+    // ========================================
+
+    /// Invoke a module synchronously with a timeout
+    ///
+    /// Useful for production safety - prevents hung LLM calls from blocking indefinitely.
+    ///
+    /// # Arguments
+    ///
+    /// * `module_id` - The ID of the module to invoke
+    /// * `input` - JSON input containing field values
+    /// * `timeout_ms` - Maximum time to wait in milliseconds
+    ///
+    /// # Returns
+    ///
+    /// JSON output containing the predicted field values, or `Timeout` error.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let result = engine.invoke_sync_with_timeout(
+    ///     "npc.dialogue.casual",
+    ///     json!({ "player_message": "Hello!" }),
+    ///     5000, // 5 second timeout
+    /// )?;
+    /// ```
+    pub fn invoke_sync_with_timeout(
+        &self,
+        module_id: &str,
+        input: Value,
+        timeout_ms: u64,
+    ) -> Result<Value> {
+        let input_clone = input.clone();
+        let timeout = Duration::from_millis(timeout_ms);
+
+        tokio::runtime::Handle::try_current()
+            .map(|h| {
+                h.block_on(async {
+                    tokio::time::timeout(timeout, self.invoke(module_id, input))
+                        .await
+                        .map_err(|_| DSPyEngineError::Timeout(timeout_ms))?
+                })
+            })
+            .unwrap_or_else(|_| {
+                let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                    DSPyEngineError::RuntimeError(format!("Failed to create runtime: {}", e))
+                })?;
+                rt.block_on(async {
+                    tokio::time::timeout(timeout, self.invoke(module_id, input_clone))
+                        .await
+                        .map_err(|_| DSPyEngineError::Timeout(timeout_ms))?
+                })
+            })
+    }
+
+    /// Invoke a module with tools synchronously with a timeout
+    ///
+    /// Useful for production safety with tool-enabled modules.
+    ///
+    /// # Arguments
+    ///
+    /// * `module_id` - The ID of the module to invoke
+    /// * `input` - JSON input containing field values
+    /// * `timeout_ms` - Maximum time to wait in milliseconds
+    ///
+    /// # Returns
+    ///
+    /// JSON output containing the predicted field values, or `Timeout` error.
+    pub fn invoke_with_tools_sync_with_timeout(
+        &self,
+        module_id: &str,
+        input: Value,
+        timeout_ms: u64,
+    ) -> Result<Value> {
+        let input_clone = input.clone();
+        let timeout = Duration::from_millis(timeout_ms);
+
+        tokio::runtime::Handle::try_current()
+            .map(|h| {
+                h.block_on(async {
+                    tokio::time::timeout(timeout, self.invoke_with_tools(module_id, input))
+                        .await
+                        .map_err(|_| DSPyEngineError::Timeout(timeout_ms))?
+                })
+            })
+            .unwrap_or_else(|_| {
+                let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                    DSPyEngineError::RuntimeError(format!("Failed to create runtime: {}", e))
+                })?;
+                rt.block_on(async {
+                    tokio::time::timeout(timeout, self.invoke_with_tools(module_id, input_clone))
+                        .await
+                        .map_err(|_| DSPyEngineError::Timeout(timeout_ms))?
+                })
+            })
+    }
+
+    // ========================================
+    // Sync helpers for Rhai integration
+    // ========================================
+
+    /// Register a tool synchronously
+    ///
+    /// Useful for Rhai integration where we can't easily use async.
+    pub fn register_tool_sync(&self, tool: Arc<dyn Tool>) {
+        tokio::runtime::Handle::try_current()
+            .map(|h| h.block_on(self.register_tool(tool.clone())))
+            .unwrap_or_else(|_| {
+                if let Ok(rt) = tokio::runtime::Runtime::new() {
+                    rt.block_on(self.register_tool(tool));
+                }
+            });
+    }
+
+    /// Get all module IDs synchronously
+    ///
+    /// Useful for Rhai integration.
+    pub fn module_ids_sync(&self) -> Vec<String> {
+        tokio::runtime::Handle::try_current()
+            .map(|h| h.block_on(self.module_ids()))
+            .unwrap_or_else(|_| {
+                tokio::runtime::Runtime::new()
+                    .map(|rt| rt.block_on(self.module_ids()))
+                    .unwrap_or_default()
+            })
+    }
+
+    /// Get all tool names synchronously
+    ///
+    /// Useful for Rhai integration.
+    pub fn tool_names_sync(&self) -> Vec<String> {
+        tokio::runtime::Handle::try_current()
+            .map(|h| {
+                h.block_on(async {
+                    self.tools
+                        .read()
+                        .await
+                        .names()
+                        .iter()
+                        .map(|s| s.to_string())
+                        .collect()
+                })
+            })
+            .unwrap_or_else(|_| {
+                tokio::runtime::Runtime::new()
+                    .map(|rt| {
+                        rt.block_on(async {
+                            self.tools
+                                .read()
+                                .await
+                                .names()
+                                .iter()
+                                .map(|s| s.to_string())
+                                .collect()
+                        })
+                    })
+                    .unwrap_or_default()
+            })
+    }
+
+    /// Get a module by ID synchronously
+    ///
+    /// Useful for Rhai integration.
+    pub fn get_module_sync(&self, module_id: &str) -> Option<OptimizedModule> {
+        tokio::runtime::Handle::try_current()
+            .map(|h| h.block_on(self.get_module(module_id)))
+            .unwrap_or_else(|_| {
+                tokio::runtime::Runtime::new()
+                    .ok()
+                    .and_then(|rt| rt.block_on(self.get_module(module_id)))
+            })
     }
 
     /// Execute with Predict predictor

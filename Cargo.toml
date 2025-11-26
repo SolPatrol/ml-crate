@@ -37,6 +37,9 @@ notify = "6.1"                  # Cross-platform file watcher
 notify-debouncer-mini = "0.4"   # Debounce rapid changes
 sha2 = "0.10"                   # Hash validation for change detection
 
+# Rhai scripting (Phase 3C)
+rhai = "1.0"
+
 # Sampling (Phase 1: for token sampling in generate())
 rand = "0.8"
 

@@ -37,6 +37,7 @@ pub mod hotreload;
 pub mod manifest;
 pub mod module;
 pub mod registry;
+pub mod rhai;
 pub mod tools;
 
 // Note: error must be declared after tools because it imports ToolError

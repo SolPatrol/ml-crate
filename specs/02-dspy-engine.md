@@ -1,13 +1,13 @@
 # DSPy Engine Specification
 
-**Version**: 1.2.0
-**Status**: ✅ Phase 3A + Hot Reload + Phase 3B Tool System Complete
-**Dependencies**: CandleAdapter (Component #3), Model Pool (Component #2), dspy-rs (v0.7.3+)
+**Version**: 1.3.0
+**Status**: ✅ Phase 3A + Hot Reload + Phase 3B Tool System + Phase 3C Rhai Integration Complete
+**Dependencies**: CandleAdapter (Component #3), Model Pool (Component #2), dspy-rs (v0.7.3+), rhai (v1.0)
 **Last Updated**: 2025-11-25
 
 ---
 
-## ✅ Implementation Status (v1.2.0)
+## ✅ Implementation Status (v1.3.0)
 
 **Phase 3A (Core Engine)**: ✅ COMPLETE
 - OptimizedModule, Demo, SignatureDefinition types implemented
@@ -41,29 +41,47 @@
 - 2 integration tests with real model (invoke_with_tools, tools_not_enabled)
 - See: [PHASE-3B-TOOL-SYSTEM-CHECKLIST.md](./PHASE-3B-TOOL-SYSTEM-CHECKLIST.md)
 
+**Phase 3C (Rhai Integration)**: ✅ COMPLETE
+- JSON ↔ Rhai Dynamic bidirectional conversion (`json_to_dynamic`, `dynamic_to_json`)
+- RhaiTool wraps Rhai FnPtr as Tool trait (creates Engine per call since Engine is !Send + !Sync)
+- `register_dspy_engine()` registers all DSPyEngine functions with Rhai Engine
+- Rhai functions: `dspy_invoke`, `dspy_invoke_with_tools`, `dspy_invoke_with_timeout`, `dspy_invoke_with_tools_timeout`
+- Rhai helper functions: `dspy_register_tool`, `dspy_list_modules`, `dspy_list_tools`, `dspy_get_module_info`
+- Structured error types: RhaiConversionError, RhaiIntegrationError with `result_to_dynamic()` helper
+- Timeout support: `invoke_sync_with_timeout()`, `invoke_with_tools_sync_with_timeout()`
+- Sync helpers: `register_tool_sync()`, `module_ids_sync()`, `tool_names_sync()`, `get_module_sync()`
+- 49 Rhai-specific unit tests passing
+- See: [PHASE-3C-RHAI-CHECKLIST.md](./PHASE-3C-RHAI-CHECKLIST.md)
+
 **Files Created/Modified**:
-- `src/inference/mod.rs` - Module exports (updated with tools)
-- `src/inference/error.rs` - DSPyEngineError enum (15 variants incl. ToolError)
+- `src/inference/mod.rs` - Module exports (updated with rhai)
+- `src/inference/error.rs` - DSPyEngineError enum (16 variants incl. Timeout)
 - `src/inference/module.rs` - OptimizedModule, Demo, PredictorType, etc.
 - `src/inference/manifest.rs` - ModuleManifest, ModuleEntry, load helpers
 - `src/inference/registry.rs` - SignatureRegistry
 - `src/inference/conversion.rs` - Value/Example conversion helpers
-- `src/inference/engine.rs` - DSPyEngine struct + tool methods
+- `src/inference/engine.rs` - DSPyEngine struct + tool methods + timeout variants + sync helpers
 - `src/inference/hotreload.rs` - HotReloadManager, config, events, stats
 - `src/inference/tools/mod.rs` - ToolCall struct, module exports
 - `src/inference/tools/error.rs` - ToolError enum
 - `src/inference/tools/traits.rs` - Tool trait
 - `src/inference/tools/registry.rs` - ToolRegistry
 - `src/inference/tools/wrapper.rs` - ToolWrapper, ToolWrapperConfig
+- `src/inference/rhai/mod.rs` - Rhai module exports + documentation
+- `src/inference/rhai/conversion.rs` - JSON ↔ Rhai Dynamic conversion helpers
+- `src/inference/rhai/error.rs` - RhaiConversionError, RhaiIntegrationError
+- `src/inference/rhai/rhai_tool.rs` - RhaiTool implementation
+- `src/inference/rhai/registration.rs` - DSPyEngine registration for Rhai
 - `tests/fixtures/modules/*.json` - Test module fixtures (incl. tool_enabled_module.json)
 - `tests/dspy_engine_tests.rs` - Integration tests (18 total, 8 with real model)
 
 **Test Summary**:
-- Library tests: 115 passed (10 ignored - CandleAdapter-specific)
+- Library tests: 160 passed (10 ignored - CandleAdapter-specific)
 - Integration tests with real model (Qwen2.5-0.5B): 8 passed
+- `cargo clippy` clean (no warnings)
 
 **Next Phase**:
-- Phase 3C: Rhai Integration
+- Phase 4: Production Enhancements (streaming, metrics, caching)
 
 ---
 
@@ -1307,25 +1325,54 @@ assert(result.response.contains("mock_result"), "Should include tool result");
 - [x] Tool unit tests pass (42 tests)
 - [x] Integration tests with real model pass (2 tests)
 
-### Phase 3C: Rhai Integration
-- [ ] DSPyEngine registered as Rhai type
-- [ ] invoke() callable from Rhai scripts
-- [ ] invoke_with_tools() callable from Rhai scripts
-- [ ] RhaiTool wraps Rhai FnPtr as Tool trait
-- [ ] register_tool() callable from Rhai scripts
-- [ ] JSON ↔ Dynamic conversion helpers work
-- [ ] End-to-end Rhai integration tests pass
+### Phase 3C: Rhai Integration ✅ COMPLETE
+- [x] DSPyEngine registered as Rhai type (via `register_dspy_engine()`)
+- [x] invoke() callable from Rhai scripts (`dspy_invoke`)
+- [x] invoke_with_tools() callable from Rhai scripts (`dspy_invoke_with_tools`)
+- [x] RhaiTool wraps Rhai FnPtr as Tool trait
+- [x] register_tool() callable from Rhai scripts (`dspy_register_tool`)
+- [x] JSON ↔ Dynamic conversion helpers work
+- [x] 49 Rhai-specific unit tests pass
 
 ---
 
-## Future Enhancements (Phase 4+)
+## Future Enhancements (Phase 3C-Optional / Phase 4+)
+
+### Phase 3C-Optional: Rhai Integration Enhancements
+
+These items were identified during Phase 3C planning but deferred as LOW priority:
+
+**Thread Safety Optimization**
+- Consider `parking_lot::RwLock` for ~2x faster lock performance
+- Profile lock contention under concurrent Rhai load
+- Consider splitting locks (modules vs tools) to reduce contention scope
+
+**Module Introspection APIs**
+- `get_demos(module_id) -> Array` - Get current demos for a module
+- `get_signature_info(signature_name) -> Map` - Get signature input/output fields
+- `list_signatures() -> Array` - List all registered signature names
+
+**Tracing Integration**
+- Add `tracing::info_span!("rhai_invoke")` to sync wrappers
+- Log module invocation duration and tool execution events
+- Add trace IDs for request correlation
+
+**Builder Pattern**
+- `DSPyEngineBuilder` for fluent configuration
+- Expose builder to Rhai for script-based engine setup
+- Support default timeout configuration at engine level
+
+**Advanced Tool Features**
+- Tool circular dependency detection (tools calling modules calling tools)
+- Tool result caching for idempotent tools
+- Parallel tool execution when multiple tools requested
+
+### Phase 4+: Core Enhancements
 
 - [ ] ReAct predictor (when dspy-rs supports it)
 - [ ] Module versioning and rollback
 - [ ] Metrics and telemetry
 - [ ] Module warmup/preloading
-- [ ] Tool response caching
-- [ ] Parallel tool execution
 - [ ] Streaming responses
 
 ---

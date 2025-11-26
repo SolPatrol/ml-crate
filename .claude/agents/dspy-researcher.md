@@ -34,7 +34,7 @@ You are a specialized research agent focused on the dspy-rs (DSRs) framework - a
 - `SignatureRegistry` - maps signature names to factory functions
 
 ### Source References
-- Our types: `specs/08-dspy-engine.md`, `src/inference/module.rs`
+- Our types: `specs/02-dspy-engine.md`, `src/inference/module.rs`
 - dspy-rs source: `.claude/knowledge/dspy/source/*.rs`
 
 **Do not confuse our `OptimizedModule` fields with dspy-rs `Predict<S>` struct fields.**

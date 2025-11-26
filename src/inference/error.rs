@@ -76,6 +76,10 @@ pub enum DSPyEngineError {
     /// Tool execution error
     #[error("Tool error: {0}")]
     ToolError(#[from] ToolError),
+
+    /// Operation timed out
+    #[error("Operation timed out after {0}ms")]
+    Timeout(u64),
 }
 
 impl DSPyEngineError {
@@ -152,7 +156,8 @@ impl DSPyEngineError {
             | Self::RuntimeError(_)
             | Self::ToolsNotEnabled(_)
             | Self::MaxIterationsReached(_)
-            | Self::ToolError(_) => ErrorKind::Inference,
+            | Self::ToolError(_)
+            | Self::Timeout(_) => ErrorKind::Inference,
             Self::IoError(_) | Self::JsonError(_) | Self::ParseError(_) => ErrorKind::Io,
             Self::ConfigError(_) => ErrorKind::Config,
             Self::WatcherError(_) | Self::HotReloadFailed { .. } => ErrorKind::HotReload,
@@ -167,6 +172,7 @@ impl DSPyEngineError {
                 | Self::InferenceError(_)
                 | Self::RuntimeError(_)
                 | Self::ToolError(_)
+                | Self::Timeout(_)
         )
     }
 }
