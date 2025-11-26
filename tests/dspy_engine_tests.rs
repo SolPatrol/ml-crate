@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use dspy_rs::{Example, MetaSignature};
 use serde_json::{json, Value};
+use tokio::sync::OnceCell;
 
 use async_trait::async_trait;
 use ml_crate_dsrs::inference::{
@@ -233,17 +234,28 @@ fn test_error_types() {
 // Run with: cargo test --test dspy_engine_tests -- --ignored
 // Ensure the Qwen2.5-0.5B model is in ./models directory
 
-/// Helper to create a real adapter for integration tests
-async fn create_test_adapter() -> Arc<CandleAdapter> {
-    let pool = ModelPool::new("./models".into());
-    let loaded = pool
-        .load_model("Qwen2.5-0.5B")
+/// Shared adapter instance for all integration tests.
+/// This ensures the model is loaded only once, reducing GPU memory usage
+/// from ~6GB (one model per test) to ~1.5GB (one shared model).
+static SHARED_ADAPTER: OnceCell<Arc<CandleAdapter>> = OnceCell::const_new();
+
+/// Get the shared adapter, initializing it on first call.
+/// All tests share this single adapter instance.
+async fn get_shared_adapter() -> Arc<CandleAdapter> {
+    SHARED_ADAPTER
+        .get_or_init(|| async {
+            let pool = ModelPool::new("./models".into());
+            let loaded = pool
+                .load_model("Qwen2.5-0.5B")
+                .await
+                .expect("Failed to load model - ensure Qwen2.5-0.5B is in models/ directory");
+            Arc::new(CandleAdapter::from_loaded_model(
+                loaded,
+                CandleConfig::default(),
+            ))
+        })
         .await
-        .expect("Failed to load model - ensure Qwen2.5-0.5B is in models/ directory");
-    Arc::new(CandleAdapter::from_loaded_model(
-        loaded, // load_model already returns Arc<LoadedModel>
-        CandleConfig::default(),
-    ))
+        .clone()
 }
 
 /// Helper to create a test registry with the TestQASignature
@@ -256,7 +268,7 @@ fn create_test_registry() -> Arc<SignatureRegistry> {
 #[tokio::test]
 #[ignore = "Requires real model in ./models/Qwen2.5-0.5B"]
 async fn test_engine_load_modules() {
-    let adapter = create_test_adapter().await;
+    let adapter = get_shared_adapter().await;
     let registry = create_test_registry();
 
     let engine = DSPyEngine::new(fixtures_dir(), adapter, registry)
@@ -279,7 +291,7 @@ async fn test_engine_load_modules() {
 #[tokio::test]
 #[ignore = "Requires real model in ./models/Qwen2.5-0.5B"]
 async fn test_engine_invoke_predict() {
-    let adapter = create_test_adapter().await;
+    let adapter = get_shared_adapter().await;
     let registry = create_test_registry();
 
     let mut engine = DSPyEngine::new(fixtures_dir(), adapter, registry)
@@ -311,7 +323,7 @@ async fn test_engine_invoke_predict() {
 #[tokio::test]
 #[ignore = "Requires real model in ./models/Qwen2.5-0.5B"]
 async fn test_engine_invoke_cot() {
-    let adapter = create_test_adapter().await;
+    let adapter = get_shared_adapter().await;
     let registry = create_test_registry();
 
     let mut engine = DSPyEngine::new(fixtures_dir(), adapter, registry)
@@ -343,7 +355,7 @@ async fn test_engine_invoke_cot() {
 #[tokio::test]
 #[ignore = "Requires real model in ./models/Qwen2.5-0.5B"]
 async fn test_engine_module_not_found() {
-    let adapter = create_test_adapter().await;
+    let adapter = get_shared_adapter().await;
     let registry = create_test_registry();
 
     let engine = DSPyEngine::new(fixtures_dir(), adapter, registry)
@@ -363,7 +375,7 @@ async fn test_engine_module_not_found() {
 #[tokio::test]
 #[ignore = "Requires real model in ./models/Qwen2.5-0.5B"]
 async fn test_engine_signature_not_found() {
-    let adapter = create_test_adapter().await;
+    let adapter = get_shared_adapter().await;
     // Empty registry - no signatures registered
     let registry = Arc::new(SignatureRegistry::new());
 
@@ -386,7 +398,7 @@ async fn test_engine_signature_not_found() {
 #[tokio::test]
 #[ignore = "Requires real model in ./models/Qwen2.5-0.5B"]
 async fn test_engine_reload_module() {
-    let adapter = create_test_adapter().await;
+    let adapter = get_shared_adapter().await;
     let registry = create_test_registry();
 
     let engine = DSPyEngine::new(fixtures_dir(), adapter, registry)
@@ -507,7 +519,7 @@ fn create_test_registry_with_tools() -> Arc<SignatureRegistry> {
 #[tokio::test]
 #[ignore = "Requires real model in ./models/Qwen2.5-0.5B"]
 async fn test_engine_invoke_with_tools() {
-    let adapter = create_test_adapter().await;
+    let adapter = get_shared_adapter().await;
     let registry = create_test_registry_with_tools();
 
     let mut engine = DSPyEngine::new(fixtures_dir(), adapter, registry)
@@ -555,7 +567,7 @@ async fn test_engine_invoke_with_tools() {
 #[tokio::test]
 #[ignore = "Requires real model in ./models/Qwen2.5-0.5B"]
 async fn test_engine_invoke_with_tools_not_enabled() {
-    let adapter = create_test_adapter().await;
+    let adapter = get_shared_adapter().await;
     let registry = create_test_registry();
 
     let mut engine = DSPyEngine::new(fixtures_dir(), adapter, registry)
