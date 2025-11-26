@@ -5,6 +5,8 @@
 use std::fmt;
 use thiserror::Error;
 
+use super::tools::ToolError;
+
 /// Result type for DSPy Engine operations
 pub type Result<T> = std::result::Result<T, DSPyEngineError>;
 
@@ -70,6 +72,10 @@ pub enum DSPyEngineError {
     /// Hot reload failed
     #[error("Hot reload failed for {path}: {reason}")]
     HotReloadFailed { path: String, reason: String },
+
+    /// Tool execution error
+    #[error("Tool error: {0}")]
+    ToolError(#[from] ToolError),
 }
 
 impl DSPyEngineError {
@@ -145,7 +151,8 @@ impl DSPyEngineError {
             Self::InferenceError(_)
             | Self::RuntimeError(_)
             | Self::ToolsNotEnabled(_)
-            | Self::MaxIterationsReached(_) => ErrorKind::Inference,
+            | Self::MaxIterationsReached(_)
+            | Self::ToolError(_) => ErrorKind::Inference,
             Self::IoError(_) | Self::JsonError(_) | Self::ParseError(_) => ErrorKind::Io,
             Self::ConfigError(_) => ErrorKind::Config,
             Self::WatcherError(_) | Self::HotReloadFailed { .. } => ErrorKind::HotReload,
@@ -156,7 +163,10 @@ impl DSPyEngineError {
     pub fn is_recoverable(&self) -> bool {
         matches!(
             self,
-            Self::MaxIterationsReached(_) | Self::InferenceError(_) | Self::RuntimeError(_)
+            Self::MaxIterationsReached(_)
+                | Self::InferenceError(_)
+                | Self::RuntimeError(_)
+                | Self::ToolError(_)
         )
     }
 }

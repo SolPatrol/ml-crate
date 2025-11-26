@@ -15,6 +15,11 @@
       "path": "qa_simple.json",
       "hash": null,
       "tags": ["qa"]
+    },
+    "test.tool_module": {
+      "path": "tool_enabled_module.json",
+      "hash": null,
+      "tags": ["test", "tools"]
     }
   }
 }

@@ -1,0 +1,48 @@
+{
+  "module_id": "test.tool_module",
+  "predictor_type": "predict",
+  "signature_name": "test.tool_signature",
+  "signature": {
+    "inputs": [
+      { "name": "query", "description": "User's query", "field_type": "string" },
+      { "name": "context", "description": "Tool results and context", "field_type": "string" },
+      { "name": "available_tools", "description": "JSON list of available tools", "field_type": "json" }
+    ],
+    "outputs": [
+      { "name": "response", "description": "Response to user", "field_type": "string" },
+      { "name": "tool_call", "description": "Tool to call (null if not needed)", "field_type": "json" }
+    ]
+  },
+  "instruction": "You are a helpful assistant. If you need information, request it via tool_call. Otherwise, respond directly.",
+  "demos": [
+    {
+      "inputs": {
+        "query": "How much gold do I have?",
+        "context": "",
+        "available_tools": "[{\"name\": \"get_player_gold\", \"description\": \"Get player's current gold\"}]"
+      },
+      "outputs": {
+        "response": "",
+        "tool_call": { "name": "get_player_gold", "args": {} }
+      }
+    },
+    {
+      "inputs": {
+        "query": "How much gold do I have?",
+        "context": "Tool 'get_player_gold' returned: {\"gold\": 500}",
+        "available_tools": "[{\"name\": \"get_player_gold\", \"description\": \"Get player's current gold\"}]"
+      },
+      "outputs": {
+        "response": "You have 500 gold coins.",
+        "tool_call": null
+      }
+    }
+  ],
+  "tool_enabled": true,
+  "metadata": {
+    "optimizer": "manual",
+    "optimized_at": "2025-11-25T12:00:00Z",
+    "metric_score": null,
+    "version": "1.0.0"
+  }
+}

@@ -1,13 +1,13 @@
 # DSPy Engine Specification
 
-**Version**: 1.1.0
-**Status**: ✅ Phase 3A + Hot Reload Complete
+**Version**: 1.2.0
+**Status**: ✅ Phase 3A + Hot Reload + Phase 3B Tool System Complete
 **Dependencies**: CandleAdapter (Component #3), Model Pool (Component #2), dspy-rs (v0.7.3+)
 **Last Updated**: 2025-11-25
 
 ---
 
-## ✅ Implementation Status (v1.1.0)
+## ✅ Implementation Status (v1.2.0)
 
 **Phase 3A (Core Engine)**: ✅ COMPLETE
 - OptimizedModule, Demo, SignatureDefinition types implemented
@@ -29,20 +29,40 @@
 - Integration tests deferred (real-time file watcher tests optional for CI)
 - See: [PHASE-3A-HOTSWAP-CHECKLIST.md](./PHASE-3A-HOTSWAP-CHECKLIST.md)
 
-**Files Created**:
-- `src/inference/mod.rs` - Module exports
-- `src/inference/error.rs` - DSPyEngineError enum (14 variants incl. hot reload)
+**Phase 3B (Tool System)**: ✅ COMPLETE
+- Tool trait with async_trait for async execute()
+- ToolError enum (NotFound, InvalidArgs, ExecutionFailed, SerializationError)
+- ToolCall struct for parsing LLM tool requests
+- ToolRegistry with register(), get(), execute(), execute_call(), to_json()
+- ToolWrapper with configurable max_iterations and tool_result_key
+- DSPyEngine integration: register_tool(), invoke_with_tools(), invoke_with_tools_sync()
+- Tool loop handles both JSON string and JSON object tool_call formats
+- 42 tool system unit tests passing
+- 2 integration tests with real model (invoke_with_tools, tools_not_enabled)
+- See: [PHASE-3B-TOOL-SYSTEM-CHECKLIST.md](./PHASE-3B-TOOL-SYSTEM-CHECKLIST.md)
+
+**Files Created/Modified**:
+- `src/inference/mod.rs` - Module exports (updated with tools)
+- `src/inference/error.rs` - DSPyEngineError enum (15 variants incl. ToolError)
 - `src/inference/module.rs` - OptimizedModule, Demo, PredictorType, etc.
 - `src/inference/manifest.rs` - ModuleManifest, ModuleEntry, load helpers
 - `src/inference/registry.rs` - SignatureRegistry
 - `src/inference/conversion.rs` - Value/Example conversion helpers
-- `src/inference/engine.rs` - DSPyEngine struct + enable_hot_reload()
+- `src/inference/engine.rs` - DSPyEngine struct + tool methods
 - `src/inference/hotreload.rs` - HotReloadManager, config, events, stats
-- `tests/fixtures/modules/*.json` - Test module fixtures
-- `tests/dspy_engine_tests.rs` - Integration tests
+- `src/inference/tools/mod.rs` - ToolCall struct, module exports
+- `src/inference/tools/error.rs` - ToolError enum
+- `src/inference/tools/traits.rs` - Tool trait
+- `src/inference/tools/registry.rs` - ToolRegistry
+- `src/inference/tools/wrapper.rs` - ToolWrapper, ToolWrapperConfig
+- `tests/fixtures/modules/*.json` - Test module fixtures (incl. tool_enabled_module.json)
+- `tests/dspy_engine_tests.rs` - Integration tests (18 total, 8 with real model)
 
-**Next Phases**:
-- Phase 3B: Tool System (ToolRegistry, ToolWrapper)
+**Test Summary**:
+- Library tests: 115 passed (10 ignored - CandleAdapter-specific)
+- Integration tests with real model (Qwen2.5-0.5B): 8 passed
+
+**Next Phase**:
 - Phase 3C: Rhai Integration
 
 ---
@@ -1152,8 +1172,8 @@ src/
 │   ├── traits.rs           # Tool trait
 │   ├── registry.rs         # ToolRegistry
 │   ├── wrapper.rs          # ToolWrapper
-│   └── rhai_tool.rs        # RhaiTool implementation
-└── rhai/
+│   └── rhai_tool.rs        # RhaiTool implementation (Phase 3C)
+└── rhai/                   # Phase 3C
     ├── mod.rs              # Rhai integration
     └── registration.rs     # Engine registration helpers
 ```
@@ -1276,15 +1296,16 @@ assert(result.response.contains("mock_result"), "Should include tool result");
 - [x] DSPyEngine.enable_hot_reload() method added
 - [ ] Integration tests (file system real-time tests - deferred, optional for CI)
 
-### Phase 3B: Tool System
-- [ ] Tool trait implemented
-- [ ] ToolRegistry stores and retrieves tools
-- [ ] ToolRegistry.execute() calls tool with args
-- [ ] ToolWrapper parses tool_call from LLM output
-- [ ] ToolWrapper executes tool and feeds result back
-- [ ] ToolWrapper re-invokes predictor with tool result
-- [ ] Max iterations limit prevents infinite loops
-- [ ] Tool unit tests pass
+### Phase 3B: Tool System ✅ COMPLETE
+- [x] Tool trait implemented
+- [x] ToolRegistry stores and retrieves tools
+- [x] ToolRegistry.execute() calls tool with args
+- [x] ToolWrapper parses tool_call from LLM output
+- [x] ToolWrapper executes tool and feeds result back
+- [x] ToolWrapper re-invokes predictor with tool result
+- [x] Max iterations limit prevents infinite loops
+- [x] Tool unit tests pass (42 tests)
+- [x] Integration tests with real model pass (2 tests)
 
 ### Phase 3C: Rhai Integration
 - [ ] DSPyEngine registered as Rhai type

@@ -64,6 +64,7 @@ use super::hotreload::{HotReloadConfig, HotReloadHandle, HotReloadManager};
 use super::manifest::{load_json_with_context, ModuleManifest};
 use super::module::{OptimizedModule, PredictorType};
 use super::registry::SignatureRegistry;
+use super::tools::{Tool, ToolRegistry, ToolWrapperConfig};
 
 /// DSPyEngine - Main orchestrator for module execution
 ///
@@ -84,6 +85,9 @@ pub struct DSPyEngine {
 
     /// Signature registry (provided by consumer)
     signature_registry: Arc<SignatureRegistry>,
+
+    /// Tool registry for tool-enabled modules
+    tools: Arc<RwLock<ToolRegistry>>,
 
     /// Flag indicating if dspy-rs has been configured
     configured: bool,
@@ -123,6 +127,7 @@ impl DSPyEngine {
             modules_dir,
             adapter,
             signature_registry,
+            tools: Arc::new(RwLock::new(ToolRegistry::new())),
             configured: false,
         };
 
@@ -144,6 +149,7 @@ impl DSPyEngine {
             modules_dir,
             adapter,
             signature_registry,
+            tools: Arc::new(RwLock::new(ToolRegistry::new())),
             configured: false,
         }
     }
@@ -323,6 +329,175 @@ impl DSPyEngine {
                     DSPyEngineError::RuntimeError(format!("Failed to create runtime: {}", e))
                 })?;
                 rt.block_on(self.invoke(module_id, input_clone))
+            });
+        rt
+    }
+
+    /// Register a tool for use in tool-enabled modules
+    ///
+    /// # Arguments
+    ///
+    /// * `tool` - The tool to register
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use std::sync::Arc;
+    ///
+    /// struct GetPlayerGold;
+    /// impl Tool for GetPlayerGold {
+    ///     fn name(&self) -> &str { "get_player_gold" }
+    ///     fn description(&self) -> &str { "Get player's gold" }
+    ///     async fn execute(&self, _args: Value) -> Result<Value, ToolError> {
+    ///         Ok(json!({ "gold": 500 }))
+    ///     }
+    /// }
+    ///
+    /// engine.register_tool(Arc::new(GetPlayerGold)).await;
+    /// ```
+    pub async fn register_tool(&self, tool: Arc<dyn Tool>) {
+        self.tools.write().await.register(tool);
+    }
+
+    /// Get the tool registry (read-only access)
+    pub async fn tool_registry(&self) -> tokio::sync::RwLockReadGuard<'_, ToolRegistry> {
+        self.tools.read().await
+    }
+
+    /// Invoke a module with tool support (async)
+    ///
+    /// This method handles the tool execution loop for tool-enabled modules.
+    /// It parses tool_call requests from the LLM output, executes the requested
+    /// tools, and re-invokes the predictor with the results until no more
+    /// tool calls are requested or max iterations is reached.
+    ///
+    /// # Arguments
+    ///
+    /// * `module_id` - The ID of the module to invoke (must be tool_enabled)
+    /// * `input` - JSON input containing field values
+    ///
+    /// # Returns
+    ///
+    /// JSON output containing the final predicted field values after all
+    /// tool calls are complete.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ToolsNotEnabled` if the module doesn't have `tool_enabled: true`.
+    /// Returns `MaxIterationsReached` if tool calls exceed the limit.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// let result = engine.invoke_with_tools("npc.merchant.haggle", json!({
+    ///     "query": "How much gold do I have?"
+    /// })).await?;
+    /// ```
+    pub async fn invoke_with_tools(&self, module_id: &str, input: Value) -> Result<Value> {
+        self.invoke_with_tools_config(module_id, input, ToolWrapperConfig::default())
+            .await
+    }
+
+    /// Invoke a module with tool support and custom configuration
+    pub async fn invoke_with_tools_config(
+        &self,
+        module_id: &str,
+        mut input: Value,
+        config: ToolWrapperConfig,
+    ) -> Result<Value> {
+        // Check that module exists and is tool-enabled
+        let module = self
+            .get_module(module_id)
+            .await
+            .ok_or_else(|| DSPyEngineError::module_not_found(module_id))?;
+
+        if !module.tool_enabled {
+            return Err(DSPyEngineError::ToolsNotEnabled(module_id.to_string()));
+        }
+
+        // Inject available tools into input
+        {
+            let tools = self.tools.read().await;
+            input["available_tools"] = tools.to_json();
+        }
+
+        // Tool execution loop
+        for iteration in 0..config.max_iterations {
+            tracing::debug!(
+                "Tool wrapper iteration {}/{}",
+                iteration + 1,
+                config.max_iterations
+            );
+
+            // Call the underlying predictor
+            let output = self.invoke(module_id, input.clone()).await?;
+
+            // Check for tool call in output
+            match output.get("tool_call") {
+                Some(tool_call) if !tool_call.is_null() => {
+                    // Parse the tool call - handle both JSON object and JSON string
+                    let call: super::tools::ToolCall = if let Some(s) = tool_call.as_str() {
+                        // Model returned tool_call as a JSON string - parse it
+                        serde_json::from_str(s)
+                            .map_err(|e| DSPyEngineError::ParseError(format!("Failed to parse tool_call string: {}", e)))?
+                    } else {
+                        // Model returned tool_call as a JSON object - deserialize directly
+                        serde_json::from_value(tool_call.clone())
+                            .map_err(|e| DSPyEngineError::ParseError(format!("Failed to parse tool_call: {}", e)))?
+                    };
+
+                    tracing::debug!("Executing tool call: {} with args: {:?}", call.name, call.args);
+
+                    // Execute the tool
+                    let result = {
+                        let tools = self.tools.read().await;
+                        tools.execute_call(&call).await?
+                    };
+
+                    tracing::debug!("Tool '{}' returned: {:?}", call.name, result);
+
+                    // Append result to context for next iteration
+                    let context_update = format!(
+                        "Tool '{}' returned: {}",
+                        call.name,
+                        serde_json::to_string(&result).unwrap_or_else(|_| "{}".to_string())
+                    );
+
+                    let existing = input
+                        .get(&config.tool_result_key)
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+
+                    let new_context = if existing.is_empty() {
+                        context_update
+                    } else {
+                        format!("{}\n{}", existing, context_update)
+                    };
+
+                    input[&config.tool_result_key] = Value::String(new_context);
+                }
+                _ => {
+                    // No tool call - return the response
+                    return Ok(output);
+                }
+            }
+        }
+
+        Err(DSPyEngineError::MaxIterationsReached(config.max_iterations))
+    }
+
+    /// Invoke a module with tools synchronously (blocking)
+    ///
+    /// This is useful for integration with synchronous code like Rhai.
+    pub fn invoke_with_tools_sync(&self, module_id: &str, input: Value) -> Result<Value> {
+        let input_clone = input.clone();
+        let rt = tokio::runtime::Handle::try_current()
+            .map(|h| h.block_on(self.invoke_with_tools(module_id, input)))
+            .unwrap_or_else(|_| {
+                let rt = tokio::runtime::Runtime::new().map_err(|e| {
+                    DSPyEngineError::RuntimeError(format!("Failed to create runtime: {}", e))
+                })?;
+                rt.block_on(self.invoke_with_tools(module_id, input_clone))
             });
         rt
     }

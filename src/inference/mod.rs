@@ -33,11 +33,14 @@
 
 pub mod conversion;
 pub mod engine;
-pub mod error;
 pub mod hotreload;
 pub mod manifest;
 pub mod module;
 pub mod registry;
+pub mod tools;
+
+// Note: error must be declared after tools because it imports ToolError
+pub mod error;
 
 // Re-export commonly used types
 pub use conversion::{example_to_value, prediction_to_value, value_to_example};
@@ -47,3 +50,4 @@ pub use hotreload::{HotReloadConfig, HotReloadEvent, HotReloadHandle, HotReloadS
 pub use manifest::{ModuleEntry, ModuleManifest};
 pub use module::{Demo, FieldDefinition, ModuleMetadata, OptimizedModule, PredictorType, SignatureDefinition};
 pub use registry::SignatureRegistry;
+pub use tools::{Tool, ToolCall, ToolError, ToolRegistry, ToolWrapper, ToolWrapperConfig};

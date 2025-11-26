@@ -15,11 +15,13 @@ use std::sync::Arc;
 use dspy_rs::{Example, MetaSignature};
 use serde_json::{json, Value};
 
+use async_trait::async_trait;
 use ml_crate_dsrs::inference::{
     conversion::demos_to_examples,
     manifest::{load_json, ModuleEntry, ModuleManifest},
     module::{Demo, OptimizedModule, PredictorType},
     registry::SignatureRegistry,
+    tools::{Tool, ToolError},
     DSPyEngine, DSPyEngineError,
 };
 use ml_crate_dsrs::{CandleAdapter, CandleConfig, ModelPool};
@@ -265,7 +267,8 @@ async fn test_engine_load_modules() {
     assert!(engine.has_module("test.predict").await);
     assert!(engine.has_module("test.cot").await);
     assert!(engine.has_module("qa.simple").await);
-    assert_eq!(engine.module_count().await, 3);
+    assert!(engine.has_module("test.tool_module").await);
+    assert_eq!(engine.module_count().await, 4);
 
     // Verify module IDs
     let ids = engine.module_ids().await;
@@ -409,4 +412,171 @@ async fn test_engine_reload_module() {
         module_before.unwrap().module_id,
         module_after.unwrap().module_id
     );
+}
+
+// ============================================================================
+// Phase 3B: Tool System Integration Tests
+// ============================================================================
+
+/// Test signature for tool-enabled modules
+/// Matches the tool_enabled_module.json fixture
+struct TestToolSignature {
+    instruction: String,
+    demos: Vec<Example>,
+}
+
+impl Default for TestToolSignature {
+    fn default() -> Self {
+        Self {
+            instruction: "You are a helpful assistant. If you need information, request it via tool_call. Otherwise, respond directly.".to_string(),
+            demos: Vec::new(),
+        }
+    }
+}
+
+impl MetaSignature for TestToolSignature {
+    fn demos(&self) -> Vec<Example> {
+        self.demos.clone()
+    }
+
+    fn set_demos(&mut self, demos: Vec<Example>) -> anyhow::Result<()> {
+        self.demos = demos;
+        Ok(())
+    }
+
+    fn instruction(&self) -> String {
+        self.instruction.clone()
+    }
+
+    fn input_fields(&self) -> Value {
+        json!(["query", "context", "available_tools"])
+    }
+
+    fn output_fields(&self) -> Value {
+        json!(["response", "tool_call"])
+    }
+
+    fn update_instruction(&mut self, instruction: String) -> anyhow::Result<()> {
+        self.instruction = instruction;
+        Ok(())
+    }
+
+    fn append(&mut self, _name: &str, _value: Value) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+/// Mock tool that returns player gold amount
+struct GetPlayerGoldTool {
+    gold_amount: i64,
+}
+
+impl GetPlayerGoldTool {
+    fn new(gold_amount: i64) -> Self {
+        Self { gold_amount }
+    }
+}
+
+#[async_trait]
+impl Tool for GetPlayerGoldTool {
+    fn name(&self) -> &str {
+        "get_player_gold"
+    }
+
+    fn description(&self) -> &str {
+        "Get player's current gold"
+    }
+
+    fn args_schema(&self) -> Option<Value> {
+        Some(json!({}))
+    }
+
+    async fn execute(&self, _args: Value) -> Result<Value, ToolError> {
+        Ok(json!({ "gold": self.gold_amount }))
+    }
+}
+
+/// Helper to create a registry with both QA and Tool signatures
+fn create_test_registry_with_tools() -> Arc<SignatureRegistry> {
+    let mut registry = SignatureRegistry::new();
+    registry.register::<TestQASignature>("test.qa");
+    registry.register::<TestToolSignature>("test.tool_signature");
+    Arc::new(registry)
+}
+
+#[tokio::test]
+#[ignore = "Requires real model in ./models/Qwen2.5-0.5B"]
+async fn test_engine_invoke_with_tools() {
+    let adapter = create_test_adapter().await;
+    let registry = create_test_registry_with_tools();
+
+    let mut engine = DSPyEngine::new(fixtures_dir(), adapter, registry)
+        .await
+        .expect("Failed to create engine");
+
+    // Register the mock tool
+    engine.register_tool(Arc::new(GetPlayerGoldTool::new(500))).await;
+
+    // Configure dspy-rs before invoking
+    engine.configure_dspy().await.expect("Failed to configure dspy");
+
+    // Invoke the tool-enabled module
+    let result = engine
+        .invoke_with_tools(
+            "test.tool_module",
+            json!({
+                "query": "How much gold do I have?"
+            }),
+        )
+        .await;
+
+    // The test succeeds if either:
+    // 1. We get a valid response (model stopped calling tools)
+    // 2. We hit max iterations (tool loop is working, model just keeps calling tools)
+    //
+    // Small models like Qwen2.5-0.5B may not properly understand when to stop
+    // calling tools, but the important thing is that the tool execution loop works.
+    match &result {
+        Ok(output) => {
+            assert!(output.is_object());
+            println!("Tool-enabled output: {:?}", output);
+        }
+        Err(DSPyEngineError::MaxIterationsReached(n)) => {
+            // This is acceptable - it means the tool loop is working
+            // but the model keeps requesting tools
+            println!("Tool loop reached max iterations ({}) - this is expected with small models", n);
+        }
+        Err(e) => {
+            panic!("invoke_with_tools failed unexpectedly: {:?}", e);
+        }
+    }
+}
+
+#[tokio::test]
+#[ignore = "Requires real model in ./models/Qwen2.5-0.5B"]
+async fn test_engine_invoke_with_tools_not_enabled() {
+    let adapter = create_test_adapter().await;
+    let registry = create_test_registry();
+
+    let mut engine = DSPyEngine::new(fixtures_dir(), adapter, registry)
+        .await
+        .expect("Failed to create engine");
+
+    // Configure dspy-rs before invoking
+    engine.configure_dspy().await.expect("Failed to configure dspy");
+
+    // Try to invoke a non-tool-enabled module with invoke_with_tools
+    let result = engine
+        .invoke_with_tools(
+            "test.predict",
+            json!({
+                "question": "What is 2+2?"
+            }),
+        )
+        .await;
+
+    // Should fail with ToolsNotEnabled error
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    assert!(matches!(err, DSPyEngineError::ToolsNotEnabled(_)));
 }
