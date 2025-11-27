@@ -5,20 +5,20 @@
 //!
 //! ## Architecture
 //!
-//! This crate provides a Candle-based adapter for dspy-rs, enabling local model
+//! This crate provides a llama.cpp-based adapter for dspy-rs, enabling local model
 //! inference with the DSPy Module system (Signatures, Predictors, Optimizers).
 //!
 //! ## Components
 //!
 //! 1. **Hardware Manager** - VRAM detection and backend selection
 //! 2. **Model Pool** - Qwen2.5-0.5B lifecycle management (load, warmup, unload)
-//! 3. **Candle Adapter** - dspy-rs Adapter trait implementation
+//! 3. **LlamaCpp Adapter** - dspy-rs Adapter trait implementation (Vulkan/CUDA/Metal)
 //! 4. **DSPy Engine** - Module pool, execution, and Tool trait for Rhai integration
 //!
 //! ## Example Usage
 //!
 //! ```rust,ignore
-//! use ml_crate_dsrs::adapters::candle::{CandleAdapter, CandleConfig};
+//! use ml_crate_dsrs::adapters::llamacpp::{LlamaCppAdapter, LlamaCppConfig};
 //! use ml_crate_dsrs::inference::{DSPyEngine, SignatureRegistry};
 //! use ml_crate_dsrs::ModelPool;
 //! use dspy_rs::{configure, LM, Predict, Signature, example};
@@ -37,11 +37,11 @@
 //! async fn main() -> anyhow::Result<()> {
 //!     // 1. Load model from Model Pool
 //!     let model_pool = ModelPool::new("./models".into());
-//!     let loaded = model_pool.load_model("Qwen2.5-0.5B").await?;
+//!     let loaded = model_pool.load_model("qwen2.5-0.5b-instruct-q4_k_m").await?;
 //!
 //!     // 2. Create adapter
-//!     let config = CandleConfig::default();
-//!     let adapter = CandleAdapter::from_loaded_model(Arc::new(loaded), config);
+//!     let config = LlamaCppConfig::default();
+//!     let adapter = LlamaCppAdapter::from_loaded_model(Arc::new(loaded), config);
 //!
 //!     // 3. Create signature registry and register signatures
 //!     let mut registry = SignatureRegistry::new();
@@ -71,10 +71,10 @@ pub mod inference;
 pub mod model_pool;
 
 // Re-export commonly used types from adapters
-pub use adapters::candle::{CandleAdapter, CandleConfig, CandleAdapterError};
+pub use adapters::llamacpp::{LlamaCppAdapter, LlamaCppConfig, LlamaCppError};
 
 // Re-export commonly used types from model_pool
-pub use model_pool::ModelPool;
+pub use model_pool::{ModelPool, ModelPoolConfig};
 
 // Re-export commonly used types from inference
 pub use inference::{

@@ -19,7 +19,7 @@
 //!     ↓
 //! Configure signature with demos + instruction
 //!     ↓
-//! CandleAdapter.call() via dspy-rs Predictor
+//! LlamaCppAdapter.call() via dspy-rs Predictor
 //!     ↓
 //! JSON Output (Value)
 //! ```
@@ -57,7 +57,7 @@ use dspy_rs::{Example, MetaSignature, Predict, Predictor};
 use serde_json::Value;
 use tokio::sync::RwLock;
 
-use crate::adapters::candle::CandleAdapter;
+use crate::adapters::llamacpp::LlamaCppAdapter;
 
 use super::conversion::{demos_to_examples, prediction_to_value, value_to_example};
 use super::error::{DSPyEngineError, Result};
@@ -81,8 +81,8 @@ pub struct DSPyEngine {
     /// Directory containing module files
     modules_dir: PathBuf,
 
-    /// CandleAdapter for local inference
-    adapter: Arc<CandleAdapter>,
+    /// LlamaCppAdapter for local inference
+    adapter: Arc<LlamaCppAdapter>,
 
     /// Signature registry (provided by consumer)
     signature_registry: Arc<SignatureRegistry>,
@@ -100,7 +100,7 @@ impl DSPyEngine {
     /// # Arguments
     ///
     /// * `modules_dir` - Path to directory containing module JSON files and manifest.json
-    /// * `adapter` - CandleAdapter instance for local GPU inference
+    /// * `adapter` - LlamaCppAdapter instance for local GPU inference
     /// * `signature_registry` - Consumer-provided registry mapping signature names to types
     ///
     /// # Example
@@ -119,7 +119,7 @@ impl DSPyEngine {
     /// ```
     pub async fn new(
         modules_dir: PathBuf,
-        adapter: Arc<CandleAdapter>,
+        adapter: Arc<LlamaCppAdapter>,
         signature_registry: Arc<SignatureRegistry>,
     ) -> Result<Self> {
         let engine = Self {
@@ -141,7 +141,7 @@ impl DSPyEngine {
     /// Create engine without loading modules (for testing)
     pub fn new_empty(
         modules_dir: PathBuf,
-        adapter: Arc<CandleAdapter>,
+        adapter: Arc<LlamaCppAdapter>,
         signature_registry: Arc<SignatureRegistry>,
     ) -> Self {
         Self {
@@ -167,22 +167,22 @@ impl DSPyEngine {
         }
 
         // Create LM configured for local inference
-        // dspy-rs requires an LM struct, but our CandleAdapter handles all inference
-        // locally using the embedded Candle model - no external API calls are made
+        // dspy-rs requires an LM struct, but our LlamaCppAdapter handles all inference
+        // locally using the embedded llama.cpp model - no external API calls are made
         let lm = dspy_rs::LM::builder()
-            .model("local-candle".to_string())
-            .base_url("http://localhost:0".to_string()) // Local mode - CandleAdapter handles inference
+            .model("local-llamacpp".to_string())
+            .base_url("http://localhost:0".to_string()) // Local mode - LlamaCppAdapter handles inference
             .build()
             .await
             .map_err(|e| DSPyEngineError::RuntimeError(format!("Failed to create LM: {}", e)))?;
 
-        // Configure global settings with LM and our CandleAdapter
-        // Note: CandleAdapter implements Clone via derived Clone on the struct
+        // Configure global settings with LM and our LlamaCppAdapter
+        // Note: LlamaCppAdapter implements Clone via derived Clone on the struct
         // The adapter is cloned here because configure() takes ownership
         dspy_rs::configure(lm, (*self.adapter).clone());
 
         self.configured = true;
-        tracing::info!("DSPy global settings configured with CandleAdapter");
+        tracing::info!("DSPy global settings configured with LlamaCppAdapter");
 
         Ok(())
     }
@@ -874,7 +874,7 @@ mod tests {
     use super::*;
     use crate::inference::module::ModuleMetadata;
 
-    // Note: Most tests require a real CandleAdapter with a loaded model,
+    // Note: Most tests require a real LlamaCppAdapter with a loaded model,
     // which is covered in integration tests. Here we test the non-inference parts.
 
     #[test]

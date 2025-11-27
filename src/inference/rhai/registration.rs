@@ -292,7 +292,7 @@ fn get_module_info_impl(
 mod tests {
     use super::*;
 
-    // Note: Full integration tests require a working DSPyEngine with CandleAdapter,
+    // Note: Full integration tests require a working DSPyEngine with LlamaCppAdapter,
     // which is covered in tests/rhai_integration_tests.rs.
     // Here we test the conversion utilities.
 

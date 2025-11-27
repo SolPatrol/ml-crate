@@ -1,22 +1,23 @@
 # ml-crate-dsrs
 
-Embedded LLM inference library for Rust using DSPy-style modules and Candle.
+Embedded LLM inference library for Rust using DSPy-style modules and llama.cpp.
 
 **License**: MIT
 
 ## Requirements
 
-- **CUDA 12.x toolkit** (required - no CPU fallback)
+- **GPU Backend** (one of):
+  - Vulkan SDK (default - works on AMD, NVIDIA, Intel)
+  - CUDA 12.x toolkit (NVIDIA optimized)
+  - Metal (macOS/Apple Silicon)
+  - CPU fallback (no GPU required)
 - Rust 1.70+
-- Model files for Qwen2.5-0.5B:
-  - `config.json`
-  - `tokenizer.json`
-  - `model.safetensors`
+- GGUF model file: `qwen2.5-0.5b-instruct-q4_k_m.gguf`
 
 ## Quick Start
 
 ```rust
-use ml_crate_dsrs::{ModelPool, CandleAdapter, CandleConfig, DSPyEngine, SignatureRegistry};
+use ml_crate_dsrs::{ModelPool, LlamaCppAdapter, LlamaCppConfig, DSPyEngine, SignatureRegistry};
 use dspy_rs::Signature;
 use std::sync::Arc;
 use std::path::PathBuf;
@@ -30,14 +31,14 @@ struct QA {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // 2. Load model
+    // 2. Load GGUF model
     let pool = ModelPool::new("./models".into());
-    let loaded = pool.load_model("Qwen2.5-0.5B").await?;
+    let loaded = pool.load_model("qwen2.5-0.5b-instruct-q4_k_m").await?;
 
     // 3. Create adapter
-    let adapter = Arc::new(CandleAdapter::from_loaded_model(
+    let adapter = Arc::new(LlamaCppAdapter::from_loaded_model(
         loaded,
-        CandleConfig::default(),
+        LlamaCppConfig::default(),
     ));
 
     // 4. Register signatures
@@ -164,17 +165,32 @@ See [specs/02-dspy-engine.md](specs/02-dspy-engine.md) for full Rhai API.
 ```
 your-project/
 ├── models/
-│   └── Qwen2.5-0.5B/
-│       ├── config.json
-│       ├── tokenizer.json
-│       └── model.safetensors
+│   └── qwen2.5-0.5b-instruct-q4_k_m.gguf
 └── modules/
     ├── manifest.json
     └── qa_simple.json
 ```
 
+## Backend Selection
+
+Build with different GPU backends:
+
+```bash
+# Vulkan (default) - AMD, NVIDIA, Intel GPUs
+cargo build
+
+# CUDA - NVIDIA optimized (+10-20% vs Vulkan)
+cargo build --features cuda
+
+# Metal - macOS/Apple Silicon
+cargo build --features metal
+
+# CPU only
+cargo build --features cpu
+```
+
 ## Documentation
 
 - [Architecture Overview](specs/ARCH.md)
-- [Candle Adapter Spec](specs/01-candle-adapter.md)
+- [LlamaCpp Adapter Spec](specs/01-llamacpp-adapter.md)
 - [DSPy Engine Spec](specs/02-dspy-engine.md)

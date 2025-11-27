@@ -1,52 +1,68 @@
-//! Model Pool - Manages loading and lifecycle of Candle models
+//! Model Pool - Manages loading and lifecycle of LlamaCpp models
 //!
 //! The Model Pool is responsible for:
-//! - Loading models from disk (safetensors files)
-//! - Managing tokenizers
-//! - Device selection (CPU, CUDA, Metal)
+//! - Loading GGUF models from disk
+//! - GPU layer configuration (Vulkan/CUDA/Metal)
 //! - Model caching (avoid reloading)
 //!
-//! # Phase 1 Scope
+//! # Example
 //!
-//! - Basic model loading from disk
-//! - Device detection and selection
-//! - Simple caching (HashMap)
+//! ```rust,ignore
+//! use ml_crate_dsrs::model_pool::ModelPool;
 //!
-//! # Future Phases
+//! let pool = ModelPool::new("./models/gguf".into());
 //!
-//! - VRAM management
-//! - Model quantization (Q4, Q8)
-//! - Dynamic model unloading
-//! - HuggingFace Hub downloads
+//! // Load model (will cache for reuse)
+//! let loaded = pool.load_model("qwen2.5-0.5b-instruct-q4_k_m.gguf").await?;
+//!
+//! // Second load is instant (from cache)
+//! let loaded_again = pool.load_model("qwen2.5-0.5b-instruct-q4_k_m.gguf").await?;
+//! ```
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
-use candle_core::{Device, DType};
-use candle_nn::VarBuilder;
-use candle_transformers::models::qwen2::{Config as Qwen2Config, ModelForCausalLM as Qwen2Model};
-use tokenizers::Tokenizer;
+use crate::adapters::llamacpp::{LoadedModel, LlamaCppError};
 
-use crate::adapters::candle::adapter::LoadedModel;
-use crate::adapters::candle::error::{CandleAdapterError, Result};
+/// Result type for ModelPool operations
+pub type Result<T> = std::result::Result<T, LlamaCppError>;
 
-/// ModelPool manages the lifecycle of loaded Candle models
+/// Configuration for ModelPool
+#[derive(Clone, Debug)]
+pub struct ModelPoolConfig {
+    /// Number of GPU layers to offload (99 = all layers)
+    pub n_gpu_layers: u32,
+
+    /// Context size for inference
+    pub n_ctx: u32,
+}
+
+impl Default for ModelPoolConfig {
+    fn default() -> Self {
+        Self {
+            n_gpu_layers: 99, // Offload all layers to GPU by default
+            n_ctx: 2048,      // Default context size
+        }
+    }
+}
+
+/// ModelPool manages the lifecycle of loaded LlamaCpp models
 ///
 /// # Example
 ///
 /// ```rust,ignore
-/// use ml_crate_dsrs::model_pool::ModelPool;
+/// use ml_crate_dsrs::model_pool::{ModelPool, ModelPoolConfig};
 ///
-/// # async fn example() -> Result<()> {
-/// let pool = ModelPool::new("./models".into());
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let pool = ModelPool::new("./models/gguf".into(), ModelPoolConfig::default());
 ///
 /// // Load model (will cache for reuse)
-/// let loaded = pool.load_model("Qwen3-0.6B").await?;
+/// let loaded = pool.load_model("qwen2.5-0.5b-instruct-q4_k_m.gguf").await?;
 ///
 /// // Second load is instant (from cache)
-/// let loaded_again = pool.load_model("Qwen3-0.6B").await?;
+/// let loaded_again = pool.load_model("qwen2.5-0.5b-instruct-q4_k_m.gguf").await?;
 /// # Ok(())
 /// # }
 /// ```
@@ -56,26 +72,30 @@ pub struct ModelPool {
 
     /// Base directory where models are stored
     models_dir: PathBuf,
+
+    /// Configuration for model loading
+    config: ModelPoolConfig,
 }
 
 impl ModelPool {
-    /// Create a new ModelPool
+    /// Create a new ModelPool with default configuration
     ///
     /// # Arguments
     ///
-    /// * `models_dir` - Directory containing model subdirectories
+    /// * `models_dir` - Directory containing GGUF model files
     ///
     /// # Example
     ///
     /// ```rust
     /// use ml_crate_dsrs::model_pool::ModelPool;
     ///
-    /// let pool = ModelPool::new("./models".into());
+    /// let pool = ModelPool::new("./models/gguf".into(), Default::default());
     /// ```
-    pub fn new(models_dir: PathBuf) -> Self {
+    pub fn new(models_dir: PathBuf, config: ModelPoolConfig) -> Self {
         Self {
             cache: Arc::new(RwLock::new(HashMap::new())),
             models_dir,
+            config,
         }
     }
 
@@ -86,7 +106,7 @@ impl ModelPool {
     ///
     /// # Arguments
     ///
-    /// * `model_name` - Name of the model (subdirectory in models_dir)
+    /// * `model_name` - Name of the GGUF model file (e.g., "qwen2.5-0.5b-instruct-q4_k_m.gguf")
     ///
     /// # Returns
     ///
@@ -95,19 +115,20 @@ impl ModelPool {
     /// # Errors
     ///
     /// Returns error if:
-    /// - Model directory doesn't exist
-    /// - Model files are corrupted
-    /// - Device initialization fails
+    /// - Model file doesn't exist
+    /// - Model loading fails
+    /// - Backend initialization fails
     ///
     /// # Example
     ///
     /// ```rust,ignore
     /// # use ml_crate_dsrs::model_pool::ModelPool;
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-    /// let pool = ModelPool::new("./models".into());
-    /// let loaded = pool.load_model("Qwen3-0.6B").await?;
+    /// let pool = ModelPool::new("./models/gguf".into(), Default::default());
+    /// let loaded = pool.load_model("qwen2.5-0.5b-instruct-q4_k_m.gguf").await?;
     ///
-    /// println!("Loaded model: {}", loaded.model_name);
+    /// println!("Loaded model: {}", loaded.name());
+    /// println!("GPU layers: {}", loaded.gpu_layers());
     /// # Ok(())
     /// # }
     /// ```
@@ -124,8 +145,26 @@ impl ModelPool {
         // Not in cache, load from disk
         tracing::info!("Loading model from disk: {}", model_name);
         let model_path = self.models_dir.join(model_name);
+        let model_path_str = model_path.to_string_lossy().to_string();
 
-        let loaded = Self::load_from_disk(model_path, model_name.to_string()).await?;
+        // Check if file exists
+        if !model_path.exists() {
+            return Err(LlamaCppError::ModelNotLoaded(format!(
+                "Model file not found: {}",
+                model_path_str
+            )));
+        }
+
+        let n_gpu_layers = self.config.n_gpu_layers;
+        let n_ctx = self.config.n_ctx;
+
+        // Load model in blocking task (CPU/GPU-bound work)
+        let loaded = tokio::task::spawn_blocking(move || {
+            LoadedModel::load(&model_path_str, n_gpu_layers, n_ctx)
+        })
+        .await
+        .map_err(|e| LlamaCppError::InferenceFailed(format!("Task join error: {}", e)))??;
+
         let loaded = Arc::new(loaded);
 
         // Add to cache
@@ -134,137 +173,13 @@ impl ModelPool {
             cache.insert(model_name.to_string(), Arc::clone(&loaded));
         }
 
-        tracing::info!("Model loaded and cached: {}", model_name);
+        tracing::info!(
+            "Model loaded and cached: {} (GPU layers: {}, context: {})",
+            model_name,
+            loaded.gpu_layers(),
+            loaded.context_size()
+        );
         Ok(loaded)
-    }
-
-    /// Load model from disk (CPU-bound, uses spawn_blocking)
-    ///
-    /// # Arguments
-    ///
-    /// * `model_path` - Path to model directory
-    /// * `model_name` - Name for logging
-    ///
-    /// # Returns
-    ///
-    /// LoadedModel with model, tokenizer, and device
-    ///
-    /// # Model Directory Structure
-    ///
-    /// ```text
-    /// model_path/
-    /// ├── config.json          # Qwen2 model configuration
-    /// ├── tokenizer.json       # HuggingFace tokenizer
-    /// └── model.safetensors    # Model weights (F16 or F32)
-    /// ```
-    async fn load_from_disk(model_path: PathBuf, model_name: String) -> Result<LoadedModel> {
-        tokio::task::spawn_blocking(move || {
-            // 1. Initialize CUDA device (GPU-only, no CPU fallback)
-            // Requires CUDA 12.x toolkit installed
-            tracing::info!("Initializing CUDA GPU device");
-            let device = Device::new_cuda(0).map_err(|e| {
-                CandleAdapterError::ConfigError(format!(
-                    "CUDA GPU initialization failed. Ensure CUDA 12.x toolkit is installed: {}",
-                    e
-                ))
-            })?;
-
-            // 2. Load tokenizer
-            let tokenizer_path = model_path.join("tokenizer.json");
-            tracing::debug!("Loading tokenizer from: {:?}", tokenizer_path);
-
-            let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
-                CandleAdapterError::TokenizationFailed(format!(
-                    "Failed to load tokenizer from {:?}: {}",
-                    tokenizer_path, e
-                ))
-            })?;
-
-            // 3. Load config
-            let config_path = model_path.join("config.json");
-            tracing::debug!("Loading config from: {:?}", config_path);
-
-            // Parse config.json as raw JSON first to handle null values (e.g., sliding_window)
-            let config_json: serde_json::Value = serde_json::from_reader(
-                std::fs::File::open(&config_path).map_err(|e| {
-                    CandleAdapterError::ConfigError(format!(
-                        "Failed to open config.json at {:?}: {}",
-                        config_path, e
-                    ))
-                })?,
-            )
-            .map_err(|e| {
-                CandleAdapterError::ConfigError(format!("Failed to parse config.json: {}", e))
-            })?;
-
-            // Build Qwen2Config manually, handling null values
-            let config = Qwen2Config {
-                vocab_size: config_json["vocab_size"].as_u64().unwrap() as usize,
-                hidden_size: config_json["hidden_size"].as_u64().unwrap() as usize,
-                intermediate_size: config_json["intermediate_size"].as_u64().unwrap() as usize,
-                num_hidden_layers: config_json["num_hidden_layers"].as_u64().unwrap() as usize,
-                num_attention_heads: config_json["num_attention_heads"].as_u64().unwrap()
-                    as usize,
-                num_key_value_heads: config_json["num_key_value_heads"].as_u64().unwrap()
-                    as usize,
-                max_position_embeddings: config_json["max_position_embeddings"]
-                    .as_u64()
-                    .unwrap() as usize,
-                max_window_layers: config_json["max_window_layers"].as_u64().unwrap() as usize,
-                // Handle null sliding_window - use max_position_embeddings as default
-                sliding_window: config_json["sliding_window"]
-                    .as_u64()
-                    .unwrap_or(config_json["max_position_embeddings"].as_u64().unwrap())
-                    as usize,
-                use_sliding_window: config_json["use_sliding_window"].as_bool().unwrap_or(false),
-                hidden_act: candle_nn::Activation::Silu, // Qwen2/Qwen2.5 use SiLU activation
-                tie_word_embeddings: config_json["tie_word_embeddings"]
-                    .as_bool()
-                    .unwrap_or(false),
-                rms_norm_eps: config_json["rms_norm_eps"].as_f64().unwrap(),
-                rope_theta: config_json["rope_theta"].as_f64().unwrap(),
-            };
-
-            // 4. Load weights
-            let weights_path = model_path.join("model.safetensors");
-            tracing::debug!("Loading weights from: {:?}", weights_path);
-
-            if !weights_path.exists() {
-                return Err(CandleAdapterError::ModelNotLoaded(format!(
-                    "Model weights not found at {:?}",
-                    weights_path
-                )));
-            }
-
-            let vb = unsafe {
-                VarBuilder::from_mmaped_safetensors(std::slice::from_ref(&weights_path), DType::F16, &device)
-                    .map_err(|e| {
-                        CandleAdapterError::ModelNotLoaded(format!(
-                            "Failed to load weights from {:?}: {}",
-                            weights_path, e
-                        ))
-                    })?
-            };
-
-            // 5. Build model
-            tracing::debug!("Building Qwen2 model with config: {:?}", config);
-
-            let model = Qwen2Model::new(&config, vb).map_err(|e| {
-                CandleAdapterError::ModelNotLoaded(format!("Failed to build Qwen2 model: {}", e))
-            })?;
-
-            tracing::info!(
-                "Successfully loaded model: {} (device: {:?})",
-                model_name,
-                device
-            );
-
-            Ok(LoadedModel::new(model, tokenizer, device, model_name))
-        })
-        .await
-        .map_err(|e| {
-            CandleAdapterError::InferenceFailed(format!("Task join error during model load: {}", e))
-        })?
     }
 
     /// Clear the model cache (free memory)
@@ -286,6 +201,16 @@ impl ModelPool {
         let cache = self.cache.read().await;
         cache.len()
     }
+
+    /// Get the models directory
+    pub fn models_dir(&self) -> &PathBuf {
+        &self.models_dir
+    }
+
+    /// Get the configuration
+    pub fn config(&self) -> &ModelPoolConfig {
+        &self.config
+    }
 }
 
 #[cfg(test)]
@@ -294,14 +219,57 @@ mod tests {
 
     #[tokio::test]
     async fn test_model_pool_creation() {
-        let pool = ModelPool::new("./models".into());
+        let pool = ModelPool::new("./models/gguf".into(), ModelPoolConfig::default());
         assert_eq!(pool.cache_size().await, 0);
     }
 
     #[tokio::test]
     async fn test_clear_cache() {
-        let pool = ModelPool::new("./models".into());
+        let pool = ModelPool::new("./models/gguf".into(), ModelPoolConfig::default());
         pool.clear_cache().await;
         assert_eq!(pool.cache_size().await, 0);
+    }
+
+    #[tokio::test]
+    async fn test_config_defaults() {
+        let config = ModelPoolConfig::default();
+        assert_eq!(config.n_gpu_layers, 99);
+        assert_eq!(config.n_ctx, 2048);
+    }
+
+    #[tokio::test]
+    async fn test_model_not_found() {
+        let pool = ModelPool::new("./models/gguf".into(), ModelPoolConfig::default());
+        let result = pool.load_model("nonexistent-model.gguf").await;
+        assert!(result.is_err());
+        if let Err(LlamaCppError::ModelNotLoaded(msg)) = result {
+            assert!(msg.contains("not found"));
+        } else {
+            panic!("Expected ModelNotLoaded error");
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires GGUF model file"]
+    async fn test_load_real_model() {
+        let pool = ModelPool::new("./models/gguf".into(), ModelPoolConfig::default());
+        let loaded = pool
+            .load_model("qwen2.5-0.5b-instruct-q4_k_m.gguf")
+            .await
+            .expect("Model load failed");
+
+        assert!(loaded.gpu_layers() > 0);
+        assert_eq!(loaded.context_size(), 2048);
+        assert_eq!(pool.cache_size().await, 1);
+
+        // Second load should be cached
+        let loaded2 = pool
+            .load_model("qwen2.5-0.5b-instruct-q4_k_m.gguf")
+            .await
+            .expect("Cached load failed");
+        assert_eq!(pool.cache_size().await, 1); // Still just 1 model
+
+        // Should be same Arc
+        assert!(Arc::ptr_eq(&loaded, &loaded2));
     }
 }

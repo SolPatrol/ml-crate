@@ -1,7 +1,7 @@
 # LlamaCpp Adapter Specification
 
-**Version**: 0.1.0 (PLANNED)
-**Status**: Phase 0 - Specification
+**Version**: 1.0.0 (COMPLETE)
+**Status**: ✅ MIGRATION COMPLETE
 **Dependencies**: dspy-rs (v0.7.3+), Model Pool (Component #2), llama-cpp-2 (Rust bindings)
 **Last Updated**: 2025-11-26
 
@@ -15,31 +15,63 @@
 - [x] Cross-validated against CandleAdapter codebase
 - [x] Migration checklist defined
 
-**Phase 1 (Core Implementation)**: Pending
-- [ ] Add llama-cpp-2 dependency with feature flags
-- [ ] Create LlamaCppError enum (match CandleAdapterError variants)
-- [ ] Create LlamaCppConfig struct (match CandleConfig fields)
-- [ ] Implement LoadedModel struct
-- [ ] Implement LlamaCppAdapter with Adapter trait
-- [ ] Implement generate() with spawn_blocking pattern
-- [ ] Implement generate_stream() for streaming output
+**Phase 1 (Dependencies & Core Types)**: ✅ COMPLETE
+- [x] Add `llama-cpp-2` dependency with feature flags (vulkan default)
+- [x] Create `src/adapters/llamacpp/` module structure
+- [x] Add `LlamaCppError` enum (10 variants, matches CandleAdapterError + BackendError)
+- [x] Add `LlamaCppConfig` struct (15 fields, 11 builder methods)
+- [x] Implement `LoadedModel` struct (mirrors CandleAdapter)
+- [x] Create `LlamaCppAdapter` stub (constructor + getters)
+- [x] Verify builds: Vulkan ✅, CUDA ✅, CPU ✅
+- [x] Document Windows build setup ([06-windows-build-setup.md](06-windows-build-setup.md))
 
-**Phase 2 (DSPy Compatibility)**: Pending
-- [ ] Port format() from CandleAdapter
-- [ ] Port parse_response() with 3 parsing strategies
-- [ ] Demonstration support for few-shot learning
-- [ ] Full dspy-rs v0.7.3 compatibility
+**Phase 2 (Adapter Implementation)**: ✅ COMPLETE
+- [x] Implement `LlamaCppAdapter` with dspy-rs `Adapter` trait
+- [x] Implement `from_loaded_model()` constructor
+- [x] Port `format()` from CandleAdapter
+- [x] Port `format_demonstrations()` for few-shot learning
+- [x] Port `parse_response()` with 3-strategy parsing
+- [x] Implement `chat_to_prompt()` helper
+- [x] Implement `generate()` with `spawn_blocking` pattern
+- [x] Implement `generate_with_retry()` for error recovery
+- [x] Implement full `call()` method (format → generate → parse)
+- [ ] Implement `generate_stream()` for streaming output (deferred to Phase 2B)
 
-**Phase 3 (Testing & Validation)**: Pending
-- [ ] Port CandleAdapter tests to LlamaCppAdapter
-- [ ] Integration tests with real GGUF model
-- [ ] Verify dspy-rs configure() works correctly
-- [ ] Edge case testing
+**Phase 3 (Real llama-cpp-2 Integration)**: ✅ COMPLETE
+- [x] Replace placeholder types with real llama-cpp-2 types
+- [x] Implement `LoadedModel::load()` for GGUF model loading
+- [x] Implement `generate_blocking()` with full inference pipeline
+- [x] Thread safety: context created per-request (solves `!Send + !Sync`)
+- [x] Add `seed` config parameter for reproducible sampling
+- [x] Fix Windows CRT mismatch (esaxx-rs vs llama-cpp-sys-2)
+- [x] Verify GPU inference (Vulkan on NVIDIA GTX 1070)
 
-**Phase 4 (Cleanup)**: Pending
-- [ ] Remove Candle dependencies
-- [ ] Update documentation
-- [ ] Performance benchmarking
+**Phase 4 (Testing & Validation)**: ✅ COMPLETE
+- [x] Unit tests for LlamaCppAdapter (23 tests: 14 unit + 9 integration)
+- [x] Integration tests with real GGUF model (all 9 pass with shared model)
+- [x] Verify token counts are accurate (prompt + completion tokens tracked)
+- [x] Edge case unit tests (6 tests for empty/whitespace/unicode/special chars)
+- [x] Verify dspy-rs `configure()` works correctly (`test_dspy_configure()` added)
+- [x] Shared model via OnceLock (mirrors production pattern)
+- [x] Clippy clean (0 warnings)
+- [x] Backend verification: Vulkan ✅, CPU ✅
+
+**Phase 5 (Quality Gates)**: ✅ COMPLETE
+- [x] All unit tests pass (23 tests: 14 unit + 9 integration)
+- [x] Integration tests with real GGUF model pass
+- [x] Clean `cargo clippy` output (0 warnings)
+- [x] No panics or unwraps in production code (audit complete)
+- [x] Performance benchmarking: ~5.6s GPU vs ~16s CPU (3x speedup)
+
+**Phase 6 (Model Pool Integration & Cleanup)**: ✅ COMPLETE
+- [x] Download Qwen GGUF model (qwen2.5-0.5b-instruct-q4_k_m.gguf)
+- [x] Update `ModelPool` to load GGUF models via LlamaCpp
+- [x] Return `Arc<LoadedModel>` for adapter creation
+- [x] Configure GPU layers via `ModelPoolConfig` (n_gpu_layers, n_ctx)
+- [x] ModelPool cache works (second load is instant from cache)
+- [x] Update DSPyEngine to use LlamaCppAdapter
+- [x] Update all documentation (lib.rs, adapters/mod.rs updated)
+- [x] Remove Candle dependencies (candle-core, candle-nn, candle-transformers, tokenizers removed)
 
 ---
 
@@ -1357,6 +1389,15 @@ async fn main() -> anyhow::Result<()> {
 ---
 
 ## Changelog
+
+### v1.0.0 (2025-11-26) - MIGRATION COMPLETE 🎉
+- ✅ All 6 phases complete
+- ✅ Candle dependencies removed (candle-core, candle-nn, candle-transformers, tokenizers)
+- ✅ DSPyEngine migrated to LlamaCppAdapter
+- ✅ ModelPool migrated to llama.cpp GGUF loading
+- ✅ 172 library tests pass, 0 clippy warnings
+- ✅ End-to-end tested with real GGUF model on Vulkan GPU
+- llama.cpp is now the sole inference backend
 
 ### v0.1.1 (2025-11-26) - VALIDATION COMPLETE
 - ✅ Validated against dspy-rs v0.7.3 via dspy-researcher

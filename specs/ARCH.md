@@ -1,7 +1,7 @@
-# DSPy-RS Standalone Library (v3)
+# DSPy-RS Standalone Library (v4)
 
-**Version**: 0.3.0
-**Last Updated**: 2025-11-20
+**Version**: 0.4.0
+**Last Updated**: 2025-11-26
 
 ---
 
@@ -16,13 +16,14 @@ ml-crate-dsrs/
 └── src/
     ├── lib.rs                 # Public API
     ├── hardware/              # VRAM detection, backend selection
-    ├── model_pool/            # Qwen3 lifecycle (load, warmup, unload)
-    ├── candle_adapter/        # Candle ↔ dspy-rs bridge
+    ├── model_pool/            # Qwen model lifecycle (load, warmup, unload)
+    ├── adapters/
+    │   └── llamacpp/          # llama.cpp ↔ dspy-rs bridge
     ├── inference/             # DSPy module pool, execution
     └── tools/                 # Tool trait for Rhai integration
 ```
 
-**4 core components. Inference execution.**
+**4 core components. Inference execution. All GPU vendors supported.**
 
 ---
 
@@ -30,21 +31,21 @@ ml-crate-dsrs/
 
 ### 1. Hardware Manager
 - Detects available VRAM
-- Selects backend: `GPU(device_id)`
+- Selects backend: Vulkan (default), CUDA, Metal, or CPU
 - Runtime memory monitoring
 
 ### 2. Model Pool
-- Loads model(s) into GPU memory
+- Loads GGUF model(s) into GPU memory via llama.cpp
 - Warmup (first inference compiles kernels)
-- Memory footprint: ~1GB on GPU
+- Memory footprint: ~300MB on GPU (Q4_K_M quantized)
 - Cold start: <2s
 
-### 3. Candle Adapter
-- Bridges dspy-rs ↔ Candle for inference
+### 3. LlamaCpp Adapter
+- Bridges dspy-rs ↔ llama.cpp for inference
 - Implements dspy-rs `Adapter` trait
 - Receives pre-loaded model from Model Pool
-- Handles tokenization/detokenization
-- Status: ✅ Complete (v1.0.0)
+- Handles tokenization/detokenization (built into llama.cpp)
+- Supports all GPU vendors via backend selection
 
 ### 4. DSPy Engine
 - Loads pre-optimized DSPy modules into memory
@@ -55,12 +56,33 @@ ml-crate-dsrs/
 
 ---
 
+## Backend Support
+
+```
+llama.cpp (via llama-cpp-2 bindings)
+    │
+    ├── Vulkan  → AMD, NVIDIA, Intel GPUs (DEFAULT)
+    ├── CUDA    → NVIDIA GPUs (+10-20% vs Vulkan)
+    ├── Metal   → Apple Silicon
+    └── CPU     → Fallback (AVX2/AVX512)
+```
+
+| Backend | NVIDIA | AMD | Intel | Apple | Default |
+|---------|--------|-----|-------|-------|---------|
+| Vulkan | ✅ | ✅ | ✅ | ❌ | ✅ **Yes** |
+| CUDA | ✅ | ❌ | ❌ | ❌ | No |
+| Metal | ❌ | ❌ | ❌ | ✅ | No |
+| CPU | ✅ | ✅ | ✅ | ✅ | Fallback |
+
+---
+
 ## Public API
 
 ```rust
 pub use hardware::HardwareManager;
 pub use model_pool::ModelPool;
 pub use inference::DSPyEngine;
+pub use adapters::llamacpp::LlamaCppAdapter;
 pub use tools::{Tool, ToolRegistry};  // For Rhai scripting integration
 ```
 
@@ -82,17 +104,18 @@ engine.invoke("module_name", input)
 │      ↓                              │
 │  Module.forward(input, model_pool)  │
 │      ↓                              │
-│  Model Pool (Qwen3)                 │
+│  Model Pool (Qwen GGUF)             │
 │      ↓                              │
-│  Candle Adapter                     │
+│  LlamaCpp Adapter                   │
 │      ↓                              │
-│  GPU Inference ◄─────────┐          │
-│      ↓                   │          │
-│  Parse tool calls        │          │
-│      ↓                   │          │
+│  llama.cpp Inference ◄──────┐       │
+│  (Vulkan/CUDA/Metal/CPU)    │       │
+│      ↓                      │       │
+│  Parse tool calls           │       │
+│      ↓                      │       │
 │  Execute tools (ToolRegistry)       │
-│      ↓                   │          │
-│  Tool results ───────────┘          │
+│      ↓                      │       │
+│  Tool results ──────────────┘       │
 │  (may loop for multi-turn)          │
 └─────────────────────────────────────┘
     ↓
@@ -101,14 +124,36 @@ User Application: Process result
 
 ---
 
+## Model Format
+
+| Attribute | Value |
+|-----------|-------|
+| Format | GGUF |
+| Model | Qwen2.5-0.5B-Instruct |
+| Quantization | Q4_K_M (recommended) |
+| Size | ~300MB |
+| Source | [HuggingFace](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF) |
+
+---
+
 ## Dependencies
 
 - **`dspy-rs`** (v0.7.3+) - DSPy module system
-- **`candle-core`** (v0.8+) - GPU inference
-- **`candle-transformers`** (v0.8+) - Qwen2.5 model
-- **`tokenizers`** (v0.21+) - Tokenization
+- **`llama-cpp-2`** (v0.1+) - llama.cpp Rust bindings
 - **`tokio`** (v1.0+) - Async runtime
 - **`rhai`** (v1.0+) - Rhai scripting engine
+
+### Feature Flags
+
+```toml
+[features]
+default = ["vulkan"]  # Vulkan as default (broadest GPU support)
+
+cuda = ["llama-cpp-2/cuda"]      # NVIDIA optimization
+vulkan = ["llama-cpp-2/vulkan"]  # AMD, NVIDIA, Intel GPUs
+metal = ["llama-cpp-2/metal"]    # Apple Silicon
+cpu = []                          # Fallback (always available)
+```
 
 ---
 

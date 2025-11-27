@@ -3,7 +3,7 @@ name = "ml-crate-dsrs"
 version = "0.1.0"
 edition = "2021"
 authors = ["Omakase Gaming"]
-description = "DSPy-RS model crate with Candle adapter for GPU-accelerated LLM inference (Qwen2.5-0.5B)"
+description = "DSPy-RS model crate with llama.cpp adapter for GPU-accelerated LLM inference (Qwen2.5-0.5B)"
 license = "MIT"
 
 [dependencies]
@@ -15,17 +15,9 @@ async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 futures = "0.3"  # For streaming support (Phase 2B)
 
-# Candle types for model inference with CUDA GPU support
-# Requires CUDA 12.x toolkit installed (12.0-12.6 supported by cudarc)
-# Note: CUDA feature temporarily disabled for llama.cpp Phase 1 verification
-# TODO: Re-enable cuda feature once MSVC cl.exe is in PATH for nvcc
-candle-core = { version = "0.9" }
-candle-transformers = { version = "0.9" }
-candle-nn = { version = "0.9" }
-tokenizers = "0.21"           # For using provided tokenizer
-
 # llama.cpp Rust bindings for multi-backend GPU support (AMD, NVIDIA, Intel, Apple)
-# See specs/03-multi-backend-strategy.md for migration details
+# Supports: Vulkan (default), CUDA, Metal, CPU fallback
+# See specs/03-multi-backend-strategy.md for details
 llama-cpp-2 = "0.1"
 
 # Utilities
@@ -67,9 +59,9 @@ name = "ml_crate_dsrs"
 path = "src/lib.rs"
 
 # Examples - Phase 1
-[[example]]
-name = "quick_test"
-path = "examples/quick_test.rs"
+# [[example]]
+# name = "quick_test"
+# path = "examples/quick_test.rs"
 
 # Future examples
 # [[example]]

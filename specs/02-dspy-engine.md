@@ -2,7 +2,7 @@
 
 **Version**: 1.3.0
 **Status**: ✅ Phase 3A + Hot Reload + Phase 3B Tool System + Phase 3C Rhai Integration Complete
-**Dependencies**: CandleAdapter (Component #3), Model Pool (Component #2), dspy-rs (v0.7.3+), rhai (v1.0)
+**Dependencies**: LlamaCppAdapter (Component #3), Model Pool (Component #2), dspy-rs (v0.7.3+), rhai (v1.0)
 **Last Updated**: 2025-11-25
 
 ---
@@ -15,7 +15,7 @@
 - SignatureRegistry with generic registration pattern
 - Value ↔ Example/Prediction conversion helpers
 - DSPyEngine orchestrator with invoke() for Predict and ChainOfThought
-- Full local inference via CandleAdapter (no external API calls)
+- Full local inference via LlamaCppAdapter (no external API calls)
 - 73 unit tests passing (63 run + 10 ignored requiring model)
 - 16 integration tests passing (10 run + 6 ignored requiring model)
 - All 6 model-dependent tests verified passing with real Qwen2.5-0.5B
@@ -76,7 +76,7 @@
 - `tests/dspy_engine_tests.rs` - Integration tests (18 total, 8 with real model)
 
 **Test Summary**:
-- Library tests: 160 passed (10 ignored - CandleAdapter-specific)
+- Library tests: 160 passed (10 ignored - LlamaCppAdapter-specific)
 - Integration tests with real model (Qwen2.5-0.5B): 8 passed
 - `cargo clippy` clean (no warnings)
 
@@ -90,7 +90,7 @@
 The DSPy Engine is the core orchestrator for loading pre-optimized DSPy modules, executing inference, and handling tool calls. It provides a Rhai-friendly API for game server integration.
 
 **Module Path**: `ml_crate_dsrs::inference`
-**Related Components**: CandleAdapter, Model Pool, Rhai scripting
+**Related Components**: LlamaCppAdapter, Model Pool, Rhai scripting
 
 ---
 
@@ -133,7 +133,7 @@ llm_manager.invoke_with_tools("module", input)
 │  └─────────────────────────────────────────────────┘   │
 │                         ↓                               │
 │  ┌─────────────────────────────────────────────────┐   │
-│  │ CandleAdapter → Model Pool → GPU Inference       │   │
+│  │ LlamaCppAdapter → Model Pool → GPU Inference     │   │
 │  └─────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────┘
     ↓
@@ -771,8 +771,8 @@ pub struct DSPyEngine {
     /// Modules directory path
     modules_dir: PathBuf,
 
-    /// CandleAdapter for inference
-    adapter: Arc<CandleAdapter>,
+    /// LlamaCppAdapter for inference
+    adapter: Arc<LlamaCppAdapter>,
 
     /// Signature registry (provided by consumer)
     signature_registry: Arc<SignatureRegistry>,
@@ -792,7 +792,7 @@ impl DSPyEngine {
     ///
     /// # Arguments
     /// * `modules_dir` - Path to directory containing module JSON files and manifest.json
-    /// * `adapter` - CandleAdapter instance for local GPU inference
+    /// * `adapter` - LlamaCppAdapter instance for local GPU inference
     /// * `signature_registry` - Consumer-provided registry mapping signature names to types
     ///
     /// # Example
@@ -811,7 +811,7 @@ impl DSPyEngine {
     /// ```
     pub async fn new(
         modules_dir: PathBuf,
-        adapter: Arc<CandleAdapter>,
+        adapter: Arc<LlamaCppAdapter>,
         signature_registry: Arc<SignatureRegistry>,
     ) -> Result<Self, DSPyEngineError> {
         // REQUIRED: Initialize dspy-rs global state before any predictor calls
@@ -822,7 +822,7 @@ impl DSPyEngine {
             .await
             .map_err(|e| DSPyEngineError::RuntimeError(format!("Failed to create LM: {}", e)))?;
 
-        // Configure global settings with LM and our CandleAdapter
+        // Configure global settings with LM and our LlamaCppAdapter
         dspy_rs::configure(lm, adapter.as_ref().clone());
 
         let tools = Arc::new(ToolRegistry::new());
@@ -987,7 +987,7 @@ impl DSPyEngine {
         // Build prompt from module instruction, demos, and input
         let prompt = self.build_prompt(module, &input)?;
 
-        // Call CandleAdapter
+        // Call LlamaCppAdapter
         // Note: This is simplified - production would use dspy-rs Predict properly
         let response = self.adapter.generate(&prompt).await
             .map_err(|e| DSPyEngineError::InferenceError(e.to_string()))?;
@@ -1204,7 +1204,7 @@ src/
 [dependencies]
 # Existing
 dspy-rs = "0.7.3"
-candle-core = { version = "0.9", features = ["cuda"] }
+llama-cpp-2 = "0.1"
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -1381,9 +1381,9 @@ These items were identified during Phase 3C planning but deferred as LOW priorit
 
 ### Verified Against
 - dspy-rs v0.7.3 source: `.claude/knowledge/dspy/source/`
-- CandleAdapter spec: `specs/01-candle-adapter.md`
+- LlamaCppAdapter spec: `specs/01-llamacpp-adapter.md`
 - Architecture: `ARCH.md`
 
 ### Related Documentation
 - [ARCH.md](../ARCH.md) - Overall system architecture
-- [01-candle-adapter.md](./01-candle-adapter.md) - CandleAdapter specification
+- [01-llamacpp-adapter.md](./01-llamacpp-adapter.md) - LlamaCppAdapter specification

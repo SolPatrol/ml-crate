@@ -1,7 +1,7 @@
 //! DSPy Engine - Core inference engine for loading and executing pre-optimized DSPy modules
 //!
 //! This module provides the infrastructure for loading optimized DSPy modules from disk
-//! and executing them using the CandleAdapter for local inference.
+//! and executing them using the LlamaCppAdapter for local inference.
 //!
 //! # Architecture
 //!
