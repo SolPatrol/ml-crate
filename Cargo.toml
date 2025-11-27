@@ -17,10 +17,16 @@ futures = "0.3"  # For streaming support (Phase 2B)
 
 # Candle types for model inference with CUDA GPU support
 # Requires CUDA 12.x toolkit installed (12.0-12.6 supported by cudarc)
-candle-core = { version = "0.9", features = ["cuda"] }
-candle-transformers = { version = "0.9", features = ["cuda"] }
-candle-nn = { version = "0.9", features = ["cuda"] }
+# Note: CUDA feature temporarily disabled for llama.cpp Phase 1 verification
+# TODO: Re-enable cuda feature once MSVC cl.exe is in PATH for nvcc
+candle-core = { version = "0.9" }
+candle-transformers = { version = "0.9" }
+candle-nn = { version = "0.9" }
 tokenizers = "0.21"           # For using provided tokenizer
+
+# llama.cpp Rust bindings for multi-backend GPU support (AMD, NVIDIA, Intel, Apple)
+# See specs/03-multi-backend-strategy.md for migration details
+llama-cpp-2 = "0.1"
 
 # Utilities
 thiserror = "1.0"
@@ -73,3 +79,14 @@ path = "examples/quick_test.rs"
 # [[example]]
 # name = "chain_of_thought"
 # path = "examples/chain_of_thought.rs"
+
+# Feature flags for llama.cpp backend selection
+# Default: Vulkan for broadest GPU support (AMD, NVIDIA, Intel)
+[features]
+default = ["vulkan"]
+
+# GPU backends for llama-cpp-2
+cuda = ["llama-cpp-2/cuda"]      # NVIDIA GPUs (+10-20% vs Vulkan)
+vulkan = ["llama-cpp-2/vulkan"]  # AMD, NVIDIA, Intel GPUs (default)
+metal = ["llama-cpp-2/metal"]    # Apple Silicon
+cpu = []                          # CPU fallback (always available)

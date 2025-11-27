@@ -762,7 +762,42 @@ pub enum LlamaCppError {
 pub type Result<T> = std::result::Result<T, LlamaCppError>;
 ```
 
-### 5. Configuration
+### 5. Thread Safety Design (Phase 3 Implementation)
+
+**Critical Insight:** `LlamaContext` is `!Send + !Sync` in llama-cpp-2
+
+| Type | Send | Sync | Implication |
+|------|------|------|-------------|
+| `LlamaBackend` | ✅ | ✅ | Can be shared |
+| `LlamaModel` | ✅ | ✅ | Can be shared across threads |
+| `LlamaContext` | ❌ | ❌ | Cannot cross thread boundaries |
+
+**Solution:** Create context per-request inside `spawn_blocking`
+
+```rust
+// LoadedModel only holds model + backend (both Send + Sync)
+pub struct LoadedModel {
+    pub backend: LlamaBackend,   // Must stay alive
+    pub model: LlamaModel,       // Send + Sync
+    pub n_ctx: u32,              // Context size
+    // NO context stored here - created per-request
+}
+
+// In generate_blocking() inside spawn_blocking:
+fn generate_blocking(model: &LoadedModel, ...) -> Result<...> {
+    // Context created fresh for this request (never crosses threads)
+    let mut ctx = model.create_context()?;
+    // ... tokenize, decode, sample, detokenize ...
+}
+```
+
+**Trade-offs:**
+- Context creation per-request adds ~1-5ms overhead
+- Simpler than thread-local or lazy initialization
+- No mutex contention on context
+- Inference time (~100-1000ms) dominates
+
+### 6. Configuration
 
 ```rust
 // src/adapters/llamacpp/config.rs
